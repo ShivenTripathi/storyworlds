@@ -1,0 +1,186 @@
+/* ============================================================
+   EX LIBRIS per-book "world" theme archetypes
+   ============================================================
+   Each archetype overrides only the Layer 3 product tokens:
+     --world-accent, --world-accent-fg, --world-surface, --world-frame
+   (and, rarely, --radius).
+
+   Every archetype defines BOTH:
+     [data-world-theme="<id>"]                                  (dark "Fireside" default)
+     [data-app-theme="light"] [data-world-theme="<id>"]          (light "Reading Room")
+
+   Contrast is verified by scripts/check-archetype-contrast.mjs:
+     - world-accent vs mode background  >= 3.0
+     - world-accent vs world-surface    >= 3.0
+     - world-accent-fg vs world-accent  >= 4.5
+   ============================================================ */
+
+/* ---------- Classic ---------- */
+[data-world-theme="classic"] {
+  --world-accent: #e39044;
+  --world-accent-fg: #17130e;
+  --world-surface: #3b2b1b;
+  --world-frame: #865c34;
+}
+[data-app-theme="light"] [data-world-theme="classic"] {
+  --world-accent: #a85517;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #f6ece2;
+  --world-frame: #c69a70;
+}
+
+/* ---------- Gothic ---------- */
+[data-world-theme="gothic"] {
+  --world-accent: #c86273;
+  --world-accent-fg: #17130e;
+  --world-surface: #382521;
+  --world-frame: #7a4849;
+}
+[data-app-theme="light"] [data-world-theme="gothic"] {
+  --world-accent: #6e1f2e;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #f1e7e4;
+  --world-frame: #ac817a;
+}
+
+/* ---------- Noir ---------- */
+[data-world-theme="noir"] {
+  --world-accent: #d4af37;
+  --world-accent-fg: #17130e;
+  --world-surface: #393019;
+  --world-frame: #7f6a2e;
+}
+[data-app-theme="light"] [data-world-theme="noir"] {
+  --world-accent: #b0892b;
+  --world-accent-fg: #17130e;
+  --world-surface: #fcf8f0;
+  --world-frame: #cab179;
+}
+
+/* ---------- Regency ---------- */
+[data-world-theme="regency"] {
+  --world-accent: #9db4c8;
+  --world-accent-fg: #17130e;
+  --world-surface: #32302d;
+  --world-frame: #676d6f;
+}
+[data-app-theme="light"] [data-world-theme="regency"] {
+  --world-accent: #3e5c76;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #ecedeb;
+  --world-frame: #979d9a;
+}
+
+/* ---------- Golden-Age Sci-Fi ---------- */
+[data-world-theme="golden-age-scifi"] {
+  --world-accent: #e8833a;
+  --world-accent-fg: #17130e;
+  --world-surface: #3c2a19;
+  --world-frame: #88562f;
+  --radius: 2px;
+}
+[data-app-theme="light"] [data-world-theme="golden-age-scifi"] {
+  --world-accent: #b4501e;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #f8ece2;
+  --world-frame: #cc9873;
+  --radius: 2px;
+}
+
+/* ---------- Desert Epic ---------- */
+[data-world-theme="desert-epic"] {
+  --world-accent: #d98e4a;
+  --world-accent-fg: #17130e;
+  --world-surface: #3a2b1c;
+  --world-frame: #825b36;
+}
+[data-app-theme="light"] [data-world-theme="desert-epic"] {
+  --world-accent: #a0561b;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #f6ece2;
+  --world-frame: #c39a71;
+}
+
+/* ---------- Mythic ---------- */
+[data-world-theme="mythic"] {
+  --world-accent: #c9a227;
+  --world-accent-fg: #17130e;
+  --world-surface: #382e17;
+  --world-frame: #7a6426;
+}
+[data-app-theme="light"] [data-world-theme="mythic"] {
+  --world-accent: #7a5c1e;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #f2ede2;
+  --world-frame: #b29d73;
+}
+
+/* ---------- Maritime ---------- */
+[data-world-theme="maritime"] {
+  --world-accent: #6fa8ae;
+  --world-accent-fg: #17130e;
+  --world-surface: #2b2f2a;
+  --world-frame: #526763;
+}
+[data-app-theme="light"] [data-world-theme="maritime"] {
+  --world-accent: #2e5e63;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #eaede9;
+  --world-frame: #8f9e92;
+}
+
+/* ---------- Pastoral ---------- */
+[data-world-theme="pastoral"] {
+  --world-accent: #93ae78;
+  --world-accent-fg: #17130e;
+  --world-surface: #303022;
+  --world-frame: #626a4b;
+}
+[data-app-theme="light"] [data-world-theme="pastoral"] {
+  --world-accent: #5b7444;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #efefe6;
+  --world-frame: #a4a884;
+}
+
+/* ---------- Jazz Age ---------- */
+[data-world-theme="jazz-age"] {
+  --world-accent: #46b79a;
+  --world-accent-fg: #17130e;
+  --world-surface: #253127;
+  --world-frame: #3f6e5a;
+}
+[data-app-theme="light"] [data-world-theme="jazz-age"] {
+  --world-accent: #1f6e5c;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #e9efe8;
+  --world-frame: #89a58f;
+}
+
+/* ---------- Cosmic Weird ---------- */
+[data-world-theme="cosmic-weird"] {
+  --world-accent: #9b84c9;
+  --world-accent-fg: #17130e;
+  --world-surface: #312a2d;
+  --world-frame: #66576f;
+}
+[data-app-theme="light"] [data-world-theme="cosmic-weird"] {
+  --world-accent: #4e3a73;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #edeaeb;
+  --world-frame: #9e8e99;
+}
+
+/* ---------- Fairy Tale ---------- */
+[data-world-theme="fairy-tale"] {
+  --world-accent: #c583b4;
+  --world-accent-fg: #17130e;
+  --world-surface: #372a2a;
+  --world-frame: #795666;
+}
+[data-app-theme="light"] [data-world-theme="fairy-tale"] {
+  --world-accent: #7c3f6d;
+  --world-accent-fg: #fbf7ef;
+  --world-surface: #f2eaea;
+  --world-frame: #b29096;
+}

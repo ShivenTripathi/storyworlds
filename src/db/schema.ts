@@ -1,0 +1,375 @@
+import {
+  bigserial,
+  foreignKey,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  unique,
+  uuid,
+} from "drizzle-orm/pg-core";
+
+// ---------------------------------------------------------------------------
+// users
+// ---------------------------------------------------------------------------
+export const users = pgTable("users", {
+  id: text("id").primaryKey(), // Clerk user id
+  email: text("email"),
+  role: text("role").default("reader").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// books
+// ---------------------------------------------------------------------------
+export const books = pgTable(
+  "books",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ownerId: text("owner_id").references(() => users.id),
+    title: text("title").notNull(),
+    author: text("author"),
+    sourceKey: text("source_key"), // storage key of original PDF
+    status: text("status").notNull().default("uploaded"),
+    // 'uploaded' | 'extracting' | 'analyzing' | 'ready' | 'failed'
+    totalChunks: integer("total_chunks"),
+    totalWords: integer("total_words"),
+    visibility: text("visibility").default("private"), // 'private' | 'published'
+    priceCents: integer("price_cents").default(0),
+    contentHash: text("content_hash"),
+    themeArchetype: text("theme_archetype").default("classic"),
+    imageInterval: integer("image_interval").default(5),
+    tokenBudgetUsd: numeric("token_budget_usd", {
+      precision: 8,
+      scale: 4,
+    }).default("5.00"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("books_owner_id_idx").on(table.ownerId)],
+);
+
+// ---------------------------------------------------------------------------
+// chunks
+// ---------------------------------------------------------------------------
+export const chunks = pgTable(
+  "chunks",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    bookId: uuid("book_id")
+      .notNull()
+      .references(() => books.id, { onDelete: "cascade" }),
+    idx: integer("idx").notNull(),
+    pageNumber: integer("page_number"),
+    wordCount: integer("word_count"),
+    text: text("text").notNull(),
+  },
+  (table) => [
+    index("chunks_book_id_idx").on(table.bookId),
+    unique("chunks_book_id_idx_unique").on(table.bookId, table.idx),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// worldReferences
+// ---------------------------------------------------------------------------
+export const worldReferences = pgTable("world_references", {
+  bookId: uuid("book_id")
+    .primaryKey()
+    .references(() => books.id, { onDelete: "cascade" }),
+  status: text("status").default("pending"),
+  settingDescription: text("setting_description"),
+  visualStyle: jsonb("visual_style"),
+  timeline: jsonb("timeline"),
+  commitments: jsonb("commitments"),
+  unknowns: jsonb("unknowns"),
+  segmentResults: jsonb("segment_results"),
+  modelVersions: jsonb("model_versions"),
+  error: text("error"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// entities
+// ---------------------------------------------------------------------------
+export const entities = pgTable(
+  "entities",
+  {
+    bookId: uuid("book_id")
+      .notNull()
+      .references(() => books.id, { onDelete: "cascade" }),
+    id: text("id").notNull(), // slug e.g. 'char:paul-atreides'
+    name: text("name").notNull(),
+    kind: text("kind").notNull(), // 'character' | 'location' | 'object' | 'faction'
+    introducedAtChunk: integer("introduced_at_chunk"),
+    attributes: jsonb("attributes"),
+    visualDescription: text("visual_description"),
+  },
+  (table) => [primaryKey({ columns: [table.bookId, table.id] })],
+);
+
+// ---------------------------------------------------------------------------
+// entityAliases
+// ---------------------------------------------------------------------------
+export const entityAliases = pgTable(
+  "entity_aliases",
+  {
+    bookId: uuid("book_id").notNull(),
+    aliasNorm: text("alias_norm").notNull(),
+    entityId: text("entity_id").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.bookId, table.aliasNorm] }),
+    foreignKey({
+      columns: [table.bookId, table.entityId],
+      foreignColumns: [entities.bookId, entities.id],
+      name: "entity_aliases_entity_fk",
+    }).onDelete("cascade"),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// overlays
+// ---------------------------------------------------------------------------
+export const overlays = pgTable(
+  "overlays",
+  {
+    bookId: uuid("book_id")
+      .notNull()
+      .references(() => books.id, { onDelete: "cascade" }),
+    chunkIdx: integer("chunk_idx").notNull(),
+    status: text("status").default("ready"), // 'ready' | 'generating' | 'failed'
+    activeEntityIds: jsonb("active_entity_ids"), // text[] of slugs
+    unresolvedMentions: jsonb("unresolved_mentions"),
+    activeCommitments: jsonb("active_commitments"),
+    activeUnknowns: jsonb("active_unknowns"),
+    interpretiveLens: jsonb("interpretive_lens"),
+    sceneDescription: text("scene_description"),
+    suggestedQuestions: jsonb("suggested_questions"),
+    imageId: uuid("image_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.bookId, table.chunkIdx] })],
+);
+
+// ---------------------------------------------------------------------------
+// images
+// ---------------------------------------------------------------------------
+export const images = pgTable(
+  "images",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookId: uuid("book_id")
+      .notNull()
+      .references(() => books.id, { onDelete: "cascade" }),
+    chunkIdx: integer("chunk_idx"),
+    storageKey: text("storage_key").notNull(),
+    prompt: text("prompt"),
+    model: text("model"),
+    width: integer("width"),
+    height: integer("height"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("images_book_id_chunk_idx_idx").on(table.bookId, table.chunkIdx),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// chatSessions
+// ---------------------------------------------------------------------------
+export const chatSessions = pgTable(
+  "chat_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").references(() => users.id),
+    bookId: uuid("book_id")
+      .notNull()
+      .references(() => books.id, { onDelete: "cascade" }),
+    entityId: text("entity_id").notNull(),
+    mode: text("mode").notNull(), // 'story_so_far' | 'after_ending'
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("chat_sessions_user_book_entity_mode_unique").on(
+      table.userId,
+      table.bookId,
+      table.entityId,
+      table.mode,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// chatMessages
+// ---------------------------------------------------------------------------
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => chatSessions.id, { onDelete: "cascade" }),
+    role: text("role").notNull(),
+    content: text("content").notNull(),
+    chunkIdxAtSend: integer("chunk_idx_at_send"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("chat_messages_session_id_idx").on(table.sessionId)],
+);
+
+// ---------------------------------------------------------------------------
+// readingProgress
+// ---------------------------------------------------------------------------
+export const readingProgress = pgTable(
+  "reading_progress",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    bookId: uuid("book_id")
+      .notNull()
+      .references(() => books.id, { onDelete: "cascade" }),
+    currentChunk: integer("current_chunk").default(0),
+    frontierChunk: integer("frontier_chunk").default(0), // max chunk ever reached — spoiler gate
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.bookId] })],
+);
+
+// ---------------------------------------------------------------------------
+// jobs
+// ---------------------------------------------------------------------------
+export const jobs = pgTable(
+  "jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    bookId: uuid("book_id"),
+    userId: text("user_id"),
+    kind: text("kind").notNull(),
+    status: text("status").default("queued"),
+    progress: integer("progress").default(0),
+    stage: text("stage"),
+    detail: jsonb("detail"),
+    inngestRunId: text("inngest_run_id"),
+    error: text("error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("jobs_book_id_status_idx").on(table.bookId, table.status),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// usageEvents
+// ---------------------------------------------------------------------------
+export const usageEvents = pgTable(
+  "usage_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    bookId: uuid("book_id"),
+    userId: text("user_id"),
+    provider: text("provider"),
+    model: text("model"),
+    operation: text("operation"),
+    inputTokens: integer("input_tokens"),
+    outputTokens: integer("output_tokens"),
+    costUsd: numeric("cost_usd", { precision: 10, scale: 6 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("usage_events_book_id_idx").on(table.bookId)],
+);
+
+// ---------------------------------------------------------------------------
+// purchases
+// ---------------------------------------------------------------------------
+export const purchases = pgTable(
+  "purchases",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id").references(() => users.id),
+    bookId: uuid("book_id").references(() => books.id, {
+      onDelete: "cascade",
+    }),
+    stripePaymentIntent: text("stripe_payment_intent"),
+    amountCents: integer("amount_cents"),
+    status: text("status"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique("purchases_user_book_unique").on(table.userId, table.bookId),
+  ],
+);
+
+// ---------------------------------------------------------------------------
+// subscriptions
+// ---------------------------------------------------------------------------
+export const subscriptions = pgTable("subscriptions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id")
+    .notNull()
+    .unique()
+    .references(() => users.id),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  plan: text("plan").default("free"),
+  status: text("status"),
+  currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// apiKeys
+// ---------------------------------------------------------------------------
+export const apiKeys = pgTable("api_keys", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").references(() => users.id),
+  keyHash: text("key_hash").notNull().unique(),
+  prefix: text("prefix"),
+  name: text("name"),
+  scopes: jsonb("scopes"),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
