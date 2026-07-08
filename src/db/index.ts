@@ -44,9 +44,9 @@ async function createPgliteDb() {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
+   
   var __storyworldsDb: AnyDb | undefined;
-  // eslint-disable-next-line no-var
+   
   var __storyworldsDbPromise: Promise<AnyDb> | undefined;
 }
 

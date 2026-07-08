@@ -1,0 +1,155 @@
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { env } from "@/lib/env";
+
+export interface StorageDriver {
+  put(key: string, data: Uint8Array, contentType: string): Promise<void>;
+  get(key: string): Promise<Uint8Array>;
+  delete(key: string): Promise<void>;
+  /** Deletes everything under a key prefix (e.g. `books/{bookId}/`). */
+  deletePrefix(prefix: string): Promise<void>;
+  getUrl(key: string): Promise<string>;
+}
+
+// ---------------------------------------------------------------------------
+// Local filesystem driver — files under .data/files/${key}
+// ---------------------------------------------------------------------------
+
+class LocalStorageDriver implements StorageDriver {
+  private root = join(process.cwd(), ".data", "files");
+
+  private resolve(key: string): string {
+    return join(this.root, key);
+  }
+
+  async put(key: string, data: Uint8Array, _contentType: string): Promise<void> {
+    const filePath = this.resolve(key);
+    await mkdir(dirname(filePath), { recursive: true });
+    await writeFile(filePath, data);
+  }
+
+  async get(key: string): Promise<Uint8Array> {
+    return await readFile(this.resolve(key));
+  }
+
+  async delete(key: string): Promise<void> {
+    await rm(this.resolve(key), { force: true });
+  }
+
+  async deletePrefix(prefix: string): Promise<void> {
+    await rm(this.resolve(prefix), { recursive: true, force: true });
+  }
+
+  async getUrl(key: string): Promise<string> {
+    // Not used in M1 — placeholder for a future local file-serving route.
+    return `/api/files/${key}`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Cloudflare R2 driver (S3-compatible) — @aws-sdk/client-s3
+// ---------------------------------------------------------------------------
+
+class R2StorageDriver implements StorageDriver {
+  private clientPromise: Promise<import("@aws-sdk/client-s3").S3Client>;
+  private bucket: string;
+
+  constructor() {
+    this.bucket = env.R2_BUCKET ?? "";
+    this.clientPromise = (async () => {
+      const { S3Client } = await import("@aws-sdk/client-s3");
+      return new S3Client({
+        region: "auto",
+        endpoint: env.R2_ENDPOINT,
+        credentials: {
+          accessKeyId: env.R2_ACCESS_KEY_ID ?? "",
+          secretAccessKey: env.R2_SECRET_ACCESS_KEY ?? "",
+        },
+      });
+    })();
+  }
+
+  async put(key: string, data: Uint8Array, contentType: string): Promise<void> {
+    const { PutObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await this.clientPromise;
+    await client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: data,
+        ContentType: contentType,
+      }),
+    );
+  }
+
+  async get(key: string): Promise<Uint8Array> {
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await this.clientPromise;
+    const res = await client.send(
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+    const bytes = await res.Body?.transformToByteArray();
+    if (!bytes) {
+      throw new Error(`R2 object not found: ${key}`);
+    }
+    return bytes;
+  }
+
+  async delete(key: string): Promise<void> {
+    const { DeleteObjectCommand } = await import("@aws-sdk/client-s3");
+    const client = await this.clientPromise;
+    await client.send(
+      new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
+    );
+  }
+
+  async deletePrefix(prefix: string): Promise<void> {
+    const { ListObjectsV2Command, DeleteObjectsCommand } = await import(
+      "@aws-sdk/client-s3"
+    );
+    const client = await this.clientPromise;
+    let continuationToken: string | undefined;
+    do {
+      const listed = await client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+      const objects = (listed.Contents ?? [])
+        .map((o) => (o.Key ? { Key: o.Key } : undefined))
+        .filter((o): o is { Key: string } => Boolean(o));
+      if (objects.length > 0) {
+        await client.send(
+          new DeleteObjectsCommand({
+            Bucket: this.bucket,
+            Delete: { Objects: objects },
+          }),
+        );
+      }
+      continuationToken = listed.IsTruncated
+        ? listed.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
+  }
+
+  async getUrl(key: string): Promise<string> {
+    const { GetObjectCommand } = await import("@aws-sdk/client-s3");
+    const { getSignedUrl } = await import("@aws-sdk/s3-request-presigner");
+    const client = await this.clientPromise;
+    return await getSignedUrl(
+      client,
+      new GetObjectCommand({ Bucket: this.bucket, Key: key }),
+      { expiresIn: 3600 },
+    );
+  }
+}
+
+function createStorageDriver(): StorageDriver {
+  return env.STORAGE_DRIVER === "r2"
+    ? new R2StorageDriver()
+    : new LocalStorageDriver();
+}
+
+export const storage: StorageDriver = createStorageDriver();
