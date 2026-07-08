@@ -1,6 +1,15 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db, dbReady } from "@/db";
-import { books, entities, jobs, readingProgress, worldReferences } from "@/db/schema";
+import {
+  books,
+  entities,
+  entityAliases,
+  jobs,
+  overlays,
+  readingProgress,
+  worldReferences,
+} from "@/db/schema";
+import { inngest } from "@/jobs/client";
 
 export interface WorldEntityDto {
   id: string;
@@ -121,6 +130,41 @@ export async function getWorldForReader(opts: {
     entities: visibleEntities.map(toEntityDto),
     counts: { total: entityRows.length, visible: visibleEntities.length },
   };
+}
+
+/**
+ * Wipes a book's analysis (world reference, entities, aliases, overlays)
+ * and enqueues a fresh `analyze_book` job — the same wipe-and-reanalyze
+ * logic the reader-facing `POST /api/books/[bookId]/analyze?force=1` route
+ * uses, extracted here so the admin "retry analysis" action can share it
+ * without duplicating the reset semantics.
+ */
+export async function resetAndEnqueueAnalysis(bookId: string, userId: string) {
+  await dbReady;
+
+  await db.delete(overlays).where(eq(overlays.bookId, bookId));
+  await db.delete(entityAliases).where(eq(entityAliases.bookId, bookId));
+  await db.delete(entities).where(eq(entities.bookId, bookId));
+  await db.delete(worldReferences).where(eq(worldReferences.bookId, bookId));
+
+  const [job] = await db
+    .insert(jobs)
+    .values({
+      bookId,
+      userId,
+      kind: "analyze_book",
+      status: "queued",
+      progress: 0,
+      stage: "Queued…",
+    })
+    .returning();
+
+  await inngest.send({
+    name: "book/analyze.requested",
+    data: { bookId, jobId: job.id },
+  });
+
+  return job;
 }
 
 function toEntityDto(e: typeof entities.$inferSelect): WorldEntityDto {

@@ -3,7 +3,9 @@ import { z } from "zod";
 import { dbReady } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { ApiError, handleApiError } from "@/lib/errors";
+import { rateLimit } from "@/lib/rate-limit";
 import { createBookFromPdf, listBooks, toBookDto } from "@/services/books";
+import { checkEntitlement } from "@/services/entitlements";
 
 const MAX_PDF_BYTES = 50 * 1024 * 1024;
 
@@ -16,6 +18,11 @@ export async function POST(req: NextRequest) {
   try {
     await dbReady;
     const { userId } = await requireUser();
+
+    rateLimit(`user:${userId}:upload`, { windowSeconds: 600, max: 5 });
+    // Also protects the Gemini free-tier daily quota — every upload kicks
+    // off the analysis pipeline's LLM calls (see ZERO-COST CONSTRAINT).
+    await checkEntitlement(userId, "upload");
 
     const form = await req.formData();
     const file = form.get("file");
@@ -65,7 +72,7 @@ export async function GET() {
     const { userId } = await requireUser();
 
     const rows = await listBooks(userId);
-    const books = rows.map((r) => toBookDto(r.book, r));
+    const books = rows.map((r) => toBookDto(r.book, r, r.source));
 
     return NextResponse.json({ books });
   } catch (e) {

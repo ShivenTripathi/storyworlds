@@ -28,7 +28,9 @@
     ],
     "deny": [
       "Read(.env)",
-      "Read(.env.*)",
+      "Read(.env.local)",
+      "Read(.env.development)",
+      "Read(.env.production)",
       "Read(./.data/**)"
     ]
   },

@@ -46,6 +46,36 @@ const envSchema = z.object({
 
   // --- App ---
   APP_URL: z.string().url().default("http://localhost:3000"),
+
+  // --- Admin bootstrap ---
+  // Comma-separated list of emails promoted to `role: 'admin'` on sign-in
+  // (see requireUser in src/lib/auth.ts). Idempotent, DB-backed — this is
+  // NOT a hardcoded auth check, just a one-time role assignment.
+  ADMIN_EMAILS: z.string().default(""),
+
+  // --- Billing (Stripe) ---
+  // Card-free by default: BILLING_ENABLED=false (or unset) makes every
+  // billing route/service a clean 503 `billing_disabled` — see
+  // ZERO-COST CONSTRAINT in CLAUDE.md. Flip to true only once
+  // STRIPE_SECRET_KEY/STRIPE_WEBHOOK_SECRET/STRIPE_PRICE_READER are set
+  // (test mode requires no card either).
+  // z.coerce.boolean() would treat the string "false" as truthy, which is
+  // exactly the footgun an env var like this invites — preprocess instead.
+  BILLING_ENABLED: z
+    .preprocess(
+      (v) => (typeof v === "string" ? ["1", "true", "yes"].includes(v.toLowerCase()) : v),
+      z.boolean(),
+    )
+    .default(false),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PRICE_READER: z.string().optional(),
+
+  // --- Entitlement limits (per UTC day) ---
+  FREE_UPLOADS_PER_DAY: z.coerce.number().int().positive().default(2),
+  FREE_CHAT_PER_DAY: z.coerce.number().int().positive().default(20),
+  READER_UPLOADS_PER_DAY: z.coerce.number().int().positive().default(20),
+  READER_CHAT_PER_DAY: z.coerce.number().int().positive().default(500),
 });
 
 export type Env = z.infer<typeof envSchema>;

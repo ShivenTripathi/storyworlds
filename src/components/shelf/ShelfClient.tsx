@@ -5,11 +5,59 @@ import Link from "next/link";
 import { TypographicCover } from "./TypographicCover";
 import { BookCard } from "./BookCard";
 import { UploadBook } from "./UploadBook";
+import { DiscoverGrid } from "./DiscoverGrid";
 import type { Book } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
+type Tab = "shelf" | "discover";
 
 export function ShelfClient() {
+  const [tab, setTab] = useState<Tab>("shelf");
+
+  return (
+    <div>
+      <div className="mb-10">
+        <h1 className="font-display text-4xl leading-tight sm:text-5xl">Your shelf</h1>
+        <div className="mt-4 flex items-center gap-6">
+          <TabButton active={tab === "shelf"} onClick={() => setTab("shelf")}>
+            MY SHELF
+          </TabButton>
+          <TabButton active={tab === "discover"} onClick={() => setTab("discover")}>
+            DISCOVER
+          </TabButton>
+        </div>
+      </div>
+
+      {tab === "shelf" ? <MyShelf /> : <DiscoverGrid />}
+    </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="eyebrow border-b-2 pb-1 transition-colors"
+      style={{
+        borderColor: active ? "var(--world-accent, var(--primary))" : "transparent",
+        color: active ? "var(--foreground)" : "var(--muted-foreground)",
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function MyShelf() {
   const [books, setBooks] = useState<Book[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
 
@@ -48,7 +96,6 @@ export function ShelfClient() {
   if (loadState === "loading") {
     return (
       <div className="py-24 text-center">
-        <p className="eyebrow mb-6">YOUR SHELF</p>
         <p className="font-ui text-sm text-muted-foreground">Gathering your books…</p>
       </div>
     );
@@ -57,7 +104,6 @@ export function ShelfClient() {
   if (loadState === "error") {
     return (
       <div className="py-24 text-center">
-        <p className="eyebrow mb-6">YOUR SHELF</p>
         <p className="font-ui text-sm text-[var(--destructive)]">
           The shelf couldn&apos;t be reached. Try refreshing.
         </p>
@@ -68,12 +114,12 @@ export function ShelfClient() {
   if (books.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center py-24 text-center">
-        <p className="eyebrow mb-6">YOUR SHELF</p>
-        <h1 className="font-display max-w-xl text-4xl leading-tight sm:text-5xl">
+        <h2 className="font-display max-w-xl text-3xl leading-tight sm:text-4xl">
           The shelf awaits its first book.
-        </h1>
+        </h2>
         <p className="font-ui mt-6 max-w-md text-base opacity-70">
-          Upload a book to begin — the world inside it will follow.
+          Upload a book to begin — the world inside it will follow. Or visit Discover
+          for books others have shared.
         </p>
         <div className="mt-10">
           <UploadBook variant="hero" onUploaded={handleUploaded} />
@@ -97,11 +143,6 @@ export function ShelfClient() {
 
   return (
     <div>
-      <div className="mb-10">
-        <p className="eyebrow mb-2">YOUR SHELF</p>
-        <h1 className="font-display text-4xl leading-tight sm:text-5xl">Your shelf</h1>
-      </div>
-
       {continueBook ? <ContinueReadingHero book={continueBook} /> : null}
 
       <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4">

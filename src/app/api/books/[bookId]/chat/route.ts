@@ -2,7 +2,9 @@ import { z } from "zod";
 import { dbReady } from "@/db";
 import { requireBookAccess, requireUser } from "@/lib/auth";
 import { ApiError, handleApiError } from "@/lib/errors";
+import { rateLimit } from "@/lib/rate-limit";
 import { streamChatReply } from "@/services/chat";
+import { checkEntitlement } from "@/services/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +36,12 @@ export async function POST(req: Request, { params }: Params) {
     const { bookId } = await params;
     const { userId } = await requireUser();
     await requireBookAccess(bookId, userId);
+
+    rateLimit(`user:${userId}:chat`, { windowSeconds: 60, max: 10 });
+    // Also protects the Gemini free-tier daily quota (see ZERO-COST
+    // CONSTRAINT in CLAUDE.md) — this is the only path that calls the chat
+    // model.
+    await checkEntitlement(userId, "chat");
 
     const json = await req.json().catch(() => null);
     const parsed = bodySchema.safeParse(json);

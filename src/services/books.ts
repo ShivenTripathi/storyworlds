@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db, dbReady } from "@/db";
-import { books, chunks, readingProgress } from "@/db/schema";
+import { books, chunks, purchases, readingProgress } from "@/db/schema";
+import { ApiError } from "@/lib/errors";
 import { extractPdf } from "@/services/pdf";
 import { storage } from "@/services/storage";
 
@@ -87,6 +88,11 @@ export interface BookDto {
   totalChunks: number | null;
   totalWords: number | null;
   createdAt: Date;
+  visibility?: string | null;
+  themeArchetype?: string | null;
+  /** Set by listBooks: whether this book is on the shelf because the caller
+   * owns it or because they've added a published book to their library. */
+  source?: "owned" | "library";
   progress?: {
     currentChunk: number;
     frontierChunk: number;
@@ -105,12 +111,15 @@ export function toBookDto(
     totalChunks: number | null;
     totalWords: number | null;
     createdAt: Date;
+    visibility?: string | null;
+    themeArchetype?: string | null;
   },
   progress?: {
     currentChunk: number | null;
     frontierChunk: number | null;
     lastReadAt?: Date | null;
   } | null,
+  source?: "owned" | "library",
 ): BookDto {
   const dto: BookDto = {
     id: book.id,
@@ -120,7 +129,13 @@ export function toBookDto(
     totalChunks: book.totalChunks,
     totalWords: book.totalWords,
     createdAt: book.createdAt,
+    visibility: book.visibility ?? null,
+    themeArchetype: book.themeArchetype ?? null,
   };
+
+  if (source) {
+    dto.source = source;
+  }
 
   if (progress) {
     const currentChunk = progress.currentChunk ?? 0;
@@ -140,10 +155,28 @@ export function toBookDto(
   return dto;
 }
 
-export async function listBooks(ownerId: string) {
+export interface BookRow {
+  book: typeof books.$inferSelect;
+  currentChunk: number | null;
+  frontierChunk: number | null;
+  lastReadAt: Date | null;
+  source: "owned" | "library";
+}
+
+/**
+ * Books on a reader's shelf: everything they own, unioned with published
+ * books they've added to their library (via `addToLibrary`). Deduplicated
+ * by book id — owned always wins the `source` flag if somehow both apply.
+ */
+export async function listBooks(ownerId: string): Promise<BookRow[]> {
   await dbReady;
 
-  const rows = await db
+  const progressJoin = and(
+    eq(readingProgress.bookId, books.id),
+    eq(readingProgress.userId, ownerId),
+  );
+
+  const ownedRows = await db
     .select({
       book: books,
       currentChunk: readingProgress.currentChunk,
@@ -152,15 +185,90 @@ export async function listBooks(ownerId: string) {
     })
     .from(books)
     .where(eq(books.ownerId, ownerId))
-    .leftJoin(
-      readingProgress,
-      and(
-        eq(readingProgress.bookId, books.id),
-        eq(readingProgress.userId, ownerId),
-      ),
-    );
+    .leftJoin(readingProgress, progressJoin);
 
-  return rows;
+  const libraryRows = await db
+    .select({
+      book: books,
+      currentChunk: readingProgress.currentChunk,
+      frontierChunk: readingProgress.frontierChunk,
+      lastReadAt: readingProgress.updatedAt,
+    })
+    .from(purchases)
+    .innerJoin(books, eq(books.id, purchases.bookId))
+    .leftJoin(readingProgress, progressJoin)
+    .where(eq(purchases.userId, ownerId));
+
+  const byId = new Map<string, BookRow>();
+  for (const r of ownedRows) {
+    byId.set(r.book.id, { ...r, source: "owned" });
+  }
+  for (const r of libraryRows) {
+    if (!byId.has(r.book.id)) {
+      byId.set(r.book.id, { ...r, source: "library" });
+    }
+  }
+
+  return Array.from(byId.values());
+}
+
+/** Overrides a book's theme archetype. Admin-gated by the caller. */
+export async function setThemeArchetype(bookId: string, archetype: string) {
+  await dbReady;
+  const [book] = await db
+    .update(books)
+    .set({ themeArchetype: archetype, updatedAt: new Date() })
+    .where(eq(books.id, bookId))
+    .returning();
+  return book;
+}
+
+/** Flips a book's marketplace visibility. Admin-gated by the caller. */
+export async function setVisibility(
+  bookId: string,
+  visibility: "published" | "private",
+) {
+  await dbReady;
+  const [book] = await db
+    .update(books)
+    .set({ visibility, updatedAt: new Date() })
+    .where(eq(books.id, bookId))
+    .returning();
+  return book;
+}
+
+/** All published books, newest first. No owner emails — title/author only. */
+export async function listPublished() {
+  await dbReady;
+  return db
+    .select()
+    .from(books)
+    .where(eq(books.visibility, "published"))
+    .orderBy(desc(books.createdAt));
+}
+
+/**
+ * Adds a published book to a reader's library (free — the shared analysis
+ * means there's nothing new to compute). Idempotent. Throws 404/403 if the
+ * book doesn't exist or isn't published.
+ */
+export async function addToLibrary(userId: string, bookId: string) {
+  await dbReady;
+
+  const [book] = await db.select().from(books).where(eq(books.id, bookId)).limit(1);
+  if (!book) {
+    throw new ApiError(404, "not_found", "Book not found.");
+  }
+  if (book.visibility !== "published") {
+    throw new ApiError(403, "forbidden", "This book isn't published.");
+  }
+
+  await db
+    .insert(purchases)
+    .values({ userId, bookId, amountCents: 0, status: "free" })
+    .onConflictDoNothing({ target: [purchases.userId, purchases.bookId] });
+
+  return book;
 }
 
 export async function getBook(bookId: string) {
