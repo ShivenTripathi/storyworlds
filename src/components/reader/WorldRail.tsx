@@ -3,14 +3,26 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { WorldFormingCard } from "@/components/world/WorldFormingCard";
 import { CastList } from "@/components/world/CastList";
+import { SceneView } from "@/components/world/SceneView";
 import { useJob } from "@/components/world/useJob";
 import { analyzeBook, fetchWorld } from "@/components/world/api";
 import type { World } from "@/components/world/types";
+import type { OverlayState } from "./useOverlay";
+
+type WorldTab = "scene" | "cast";
 
 interface WorldRailProps {
   bookId: string;
   open: boolean;
   onClose: () => void;
+  /** The page currently on screen in the reader — drives the Scene tab. */
+  currentChunk: number;
+  /**
+   * The reader's own overlay fetch for `currentChunk` (shared with
+   * ChapterPlate). When present, SceneView reuses it instead of firing a
+   * second request for the same page.
+   */
+  overlay?: OverlayState;
 }
 
 /**
@@ -19,10 +31,11 @@ interface WorldRailProps {
  * drives its own analysis job if the reader chooses to awaken it from
  * here, mirroring (a lighter version of) the book detail page's flow.
  */
-export function WorldRail({ bookId, open, onClose }: WorldRailProps) {
+export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: WorldRailProps) {
   const [world, setWorld] = useState<World | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [tab, setTab] = useState<WorldTab>("scene");
   const { job } = useJob(jobId);
   const panelRef = useRef<HTMLDivElement>(null);
   const prevJobStatus = useRef<string | null>(null);
@@ -111,17 +124,30 @@ export function WorldRail({ bookId, open, onClose }: WorldRailProps) {
         </button>
       </div>
 
-      <div className="px-4 pb-8">
+      {loaded && status === "completed" && world ? (
+        <div className="flex items-center gap-4 border-b px-4 pb-2" style={{ borderColor: "var(--world-frame)" }}>
+          <TabButton label="Scene" active={tab === "scene"} onClick={() => setTab("scene")} />
+          <TabButton label="Cast" active={tab === "cast"} onClick={() => setTab("cast")} />
+        </div>
+      ) : null}
+
+      <div className="px-4 pb-8 pt-4">
         {!loaded ? (
           <p className="font-ui text-sm text-muted-foreground">Opening the world…</p>
         ) : status === "completed" && world ? (
           <div className="space-y-6">
-            {world.settingDescription ? (
-              <p className="font-reading text-sm leading-relaxed">{world.settingDescription}</p>
-            ) : null}
-            {world.entities && world.entities.length > 0 ? (
-              <CastList entities={world.entities} counts={world.counts} />
-            ) : null}
+            {tab === "scene" ? (
+              <SceneView bookId={bookId} chunkIdx={currentChunk} preloaded={overlay} />
+            ) : (
+              <>
+                {world.settingDescription ? (
+                  <p className="font-reading text-sm leading-relaxed">{world.settingDescription}</p>
+                ) : null}
+                {world.entities && world.entities.length > 0 ? (
+                  <CastList entities={world.entities} counts={world.counts} />
+                ) : null}
+              </>
+            )}
           </div>
         ) : isFailed ? (
           <WorldFormingCard
@@ -151,5 +177,30 @@ export function WorldRail({ bookId, open, onClose }: WorldRailProps) {
         )}
       </div>
     </div>
+  );
+}
+
+function TabButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className="eyebrow -mb-px border-b-2 pb-2 transition-colors"
+      style={{
+        borderColor: active ? "var(--world-accent)" : "transparent",
+        color: active ? "var(--card-foreground)" : undefined,
+      }}
+    >
+      {label}
+    </button>
   );
 }

@@ -77,3 +77,29 @@ export interface ApiErrorBody {
     message: string;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Scene overlays — GET /api/books/{id}/overlays/{idx}
+// ---------------------------------------------------------------------------
+
+export interface OverlayActiveEntity {
+  id: string;
+  name: string;
+  kind: string;
+}
+
+export interface Overlay {
+  chunkIdx: number;
+  sceneDescription: string;
+  interpretiveNotes?: string | null;
+  mood?: string | null;
+  suggestedQuestions: string[];
+  activeEntities: OverlayActiveEntity[];
+  imageUrl: string | null;
+  imageIsForwardFill: boolean;
+}
+
+export interface OverlayResponse {
+  overlay?: Overlay;
+  pending?: boolean;
+}

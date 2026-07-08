@@ -15,6 +15,7 @@ import {
 } from "@/domain/schemas";
 import { segmentChunks } from "@/domain/segmentation";
 import { env } from "@/lib/env";
+import { generateOverlayCore } from "@/services/overlays";
 import { inngest } from "./client";
 
 // ---------------------------------------------------------------------------
@@ -186,7 +187,7 @@ export async function runAnalysis(
 ): Promise<void> {
   await dbReady;
 
-  const { segments, bookTitle } = await stepRunner("load", async () => {
+  const { segments, bookTitle, totalChunks } = await stepRunner("load", async () => {
     const [bookRow] = await db.select().from(books).where(eq(books.id, bookId)).limit(1);
     if (!bookRow) throw new Error("Book not found");
 
@@ -200,7 +201,7 @@ export async function runAnalysis(
 
     await updateJob(jobId, { status: "running", stage: "Reading the manuscript…", progress: 5 });
 
-    return { segments: segs, bookTitle: bookRow.title };
+    return { segments: segs, bookTitle: bookRow.title, totalChunks: chunkRows.length };
   });
 
   const total = segments.length;
@@ -242,8 +243,35 @@ export async function runAnalysis(
 
   await stepRunner("persist", async () => {
     await persistWorld(bookId, synthesis, segmentResults);
-    await updateJob(jobId, { progress: 100, status: "completed", stage: "The world is ready." });
+    await updateJob(jobId, { progress: 90, status: "running", stage: "The world is ready." });
   });
+
+  // Warm-start: pre-generate overlays (illustration + companion notes) for
+  // the opening pages so the reader's first session doesn't stall on
+  // on-demand generation. Best-effort — a failure here never fails the
+  // overall analysis job, since overlays regenerate lazily per page anyway.
+  const warmStartLastIdx = Math.min(10, totalChunks - 1);
+  if (warmStartLastIdx >= 0) {
+    await stepRunner("warm-start", async () => {
+      const warmStartCount = warmStartLastIdx + 1;
+      for (let idx = 0; idx <= warmStartLastIdx; idx++) {
+        try {
+          await generateOverlayCore(bookId, idx);
+        } catch (err) {
+          console.error(
+            `[analyze-book] warm-start overlay failed for book ${bookId} chunk ${idx}:`,
+            err,
+          );
+        }
+        await updateJob(jobId, {
+          progress: 92 + Math.round(7 * ((idx + 1) / warmStartCount)),
+          stage: `Illustrating the opening pages… (${idx + 1}/${warmStartCount})`,
+        });
+      }
+    });
+  }
+
+  await updateJob(jobId, { progress: 100, status: "completed", stage: "The world is ready." });
 }
 
 // ---------------------------------------------------------------------------

@@ -40,6 +40,9 @@ const envSchema = z.object({
   MODEL_SYNTHESIS: z.string().default("gemini:gemini-2.5-flash"),
   MODEL_CHAT: z.string().default("gemini:gemini-2.5-flash-lite"),
   MODEL_IMAGE: z.string().default("none"),
+  // Illustrate every Nth page (chunkIdx % IMAGE_INTERVAL === 0). Mirrors
+  // books.imageInterval as a global fallback/default.
+  IMAGE_INTERVAL: z.coerce.number().int().positive().default(5),
 
   // --- App ---
   APP_URL: z.string().url().default("http://localhost:3000"),

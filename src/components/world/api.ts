@@ -1,4 +1,9 @@
-import type { ApiErrorBody, JobResponse, WorldResponse } from "./types";
+import type {
+  ApiErrorBody,
+  JobResponse,
+  OverlayResponse,
+  WorldResponse,
+} from "./types";
 
 /**
  * Thin fetch wrapper for the "world" API contract. All routes are
@@ -66,4 +71,15 @@ export async function analyzeBook(bookId: string): Promise<JobResponse | null> {
 
 export function fetchJob(jobId: string): Promise<JobResponse> {
   return request<JobResponse>(`/api/jobs/${jobId}`);
+}
+
+/**
+ * Fetches a single page's scene overlay. The server responds
+ * `{pending: true}` while generation is in flight (poll again) or
+ * `{overlay: {...}}` once ready. A 404/409 (or `world_not_ready` code)
+ * means the book's world isn't in a state to have overlays yet — callers
+ * should treat that as terminal, not retry.
+ */
+export function fetchOverlay(bookId: string, chunkIdx: number): Promise<OverlayResponse> {
+  return request<OverlayResponse>(`/api/books/${bookId}/overlays/${chunkIdx}`);
 }

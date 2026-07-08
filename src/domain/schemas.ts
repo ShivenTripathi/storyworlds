@@ -103,3 +103,39 @@ export type WorldEntity = z.infer<typeof WorldEntitySchema>;
 export type TimelineEntry = z.infer<typeof TimelineEntrySchema>;
 export type Commitment = z.infer<typeof CommitmentSchema>;
 export type Unknown = z.infer<typeof UnknownSchema>;
+
+// ---------------------------------------------------------------------------
+// OverlaySchema — per-page overlay (illustration prompt + reading companion
+// notes) generated on demand as a reader reaches a page.
+// ---------------------------------------------------------------------------
+
+const MAX_SUGGESTED_QUESTIONS = 3;
+
+export const OverlayActiveEntitySchema = z.object({
+  name: z.string().min(1),
+});
+
+export const OverlaySchema = z.object({
+  // Concrete, visual, illustratable description of what's happening on this
+  // page — written so an image model can turn it directly into a scene.
+  sceneDescription: z.string().min(1),
+  // Entities (by name, exact spelling as provided in the world entity list)
+  // that are active/present on this page. Resolved to entity IDs downstream
+  // via the alias index — never trust these as IDs.
+  activeEntities: z.array(OverlayActiveEntitySchema).default([]),
+  mood: z.string().optional(),
+  // A lens on what this page is doing (themes, callbacks) — never a
+  // reference to future plot events.
+  interpretiveNotes: z.string().optional(),
+  // Up to MAX_SUGGESTED_QUESTIONS questions a curious reader might ask a
+  // character on this page. Extra entries are trimmed rather than rejected,
+  // since trimming is cheap and keeps a slightly-over-eager LLM response
+  // usable instead of forcing a costly retry.
+  suggestedQuestions: z
+    .array(z.string())
+    .default([])
+    .transform((qs) => qs.slice(0, MAX_SUGGESTED_QUESTIONS)),
+});
+
+export type Overlay = z.infer<typeof OverlaySchema>;
+export type OverlayActiveEntity = z.infer<typeof OverlayActiveEntitySchema>;

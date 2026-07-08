@@ -397,8 +397,14 @@ export async function completeJson<S extends z.ZodTypeAny>(
   // zod v4 ships native JSON Schema conversion; zod-to-json-schema (built
   // for zod v3's internal `_def` shape) silently produces an empty schema
   // against zod v4 input, so we use z.toJSONSchema directly here instead.
+  // `unrepresentable: "any"` is required because some schemas (e.g.
+  // OverlaySchema.suggestedQuestions) use `.transform()` for post-parse
+  // shaping (trimming to a max length) that has no JSON Schema equivalent —
+  // without this the conversion throws instead of just widening that one
+  // field to `{}` (unconstrained) in the schema handed to the model.
   const resolvedSchema = z.toJSONSchema(opts.schema, {
     target: "draft-7",
+    unrepresentable: "any",
   }) as Record<string, unknown>;
   delete resolvedSchema.$schema;
 

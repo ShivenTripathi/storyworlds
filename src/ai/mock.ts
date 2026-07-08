@@ -68,6 +68,8 @@ function buildMockOutput(operation: MockDriverRunOpts["operation"], prompt: stri
       return buildMockSegment(prompt);
     case "synthesis":
       return buildMockSynthesis(prompt);
+    case "overlay":
+      return buildMockOverlay(prompt);
     default:
       return { text: "Mock response." };
   }
@@ -90,6 +92,41 @@ function buildMockSegment(prompt: string) {
       { summary: "A later event occurs in this segment.", page: undefined },
     ],
     settingNotes: "A generic setting, atmosphere unspecified (mock).",
+  };
+}
+
+/** Pull the bulleted entity names out of the "Known entity names" section built by buildOverlayPrompt. */
+function extractEntityListNames(prompt: string, limit: number): string[] {
+  const match = prompt.match(
+    /Known entity names for this book[^:]*:\n([\s\S]*?)\n\nPage text:/,
+  );
+  if (!match) return [];
+  return match[1]
+    .split("\n")
+    .map((line) => line.replace(/^-\s*/, "").trim())
+    .filter((line) => line.length > 0 && line !== "(no known entities yet)")
+    .slice(0, limit);
+}
+
+/** Pull the page text out of the prompt built by buildOverlayPrompt. */
+function extractPageText(prompt: string): string {
+  const match = prompt.match(/Page text:\n([\s\S]*?)\n\nGenerate the overlay/);
+  return match ? match[1] : prompt;
+}
+
+function buildMockOverlay(prompt: string) {
+  const pageText = extractPageText(prompt);
+  const entityNames = extractEntityListNames(prompt, 3);
+
+  return {
+    sceneDescription: pageText.slice(0, 200).trim() || "A quiet moment on the page (mock).",
+    activeEntities: entityNames.map((name) => ({ name })),
+    mood: "contemplative",
+    interpretiveNotes: "A mock interpretive note for this page.",
+    suggestedQuestions: [
+      "What are you thinking right now?",
+      "What do you want most in this moment?",
+    ],
   };
 }
 

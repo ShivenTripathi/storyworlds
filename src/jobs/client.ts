@@ -14,3 +14,12 @@ export interface BookAnalyzeRequestedEvent {
     jobId: string;
   };
 }
+
+export interface OverlayPrefetchRequestedEvent {
+  name: "overlay/prefetch.requested";
+  data: {
+    bookId: string;
+    fromIdx: number;
+    count: number;
+  };
+}

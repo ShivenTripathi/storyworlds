@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchBook, fetchChunk, putProgress, ReaderApiError } from "./api";
+import { ChapterPlate } from "./ChapterPlate";
 import { ReaderSettings } from "./ReaderSettings";
+import { useOverlay } from "./useOverlay";
 import { WorldRail } from "./WorldRail";
 import {
   DEFAULT_SETTINGS,
@@ -40,6 +42,18 @@ export function Reader({ bookId }: ReaderProps) {
     DEFAULT_SETTINGS,
   );
 
+  // Only start fetching the scene overlay once this page's text has settled
+  // on screen for a beat — avoids firing a request for every page flown past
+  // while paging quickly.
+  const [overlayEnabled, setOverlayEnabled] = useState(false);
+
+  // Lazily fetches (and polls for) the current page's scene overlay — shared
+  // by the inline ChapterPlate below and, via prop, WorldRail's Scene tab,
+  // so the two never double-fetch the same page.
+  const { state: overlayState } = useOverlay(bookId, currentChunk, {
+    enabled: overlayEnabled,
+  });
+
   // Hydrate persisted settings after mount — localStorage isn't available
   // during SSR, so initializing state here (rather than lazily in
   // useState) avoids a server/client markup mismatch.
@@ -51,6 +65,17 @@ export function Reader({ bookId }: ReaderProps) {
   useEffect(() => {
     saveReaderSettings(settings);
   }, [settings]);
+
+  // Arm the overlay fetch ~300ms after the current chunk's text is on
+  // screen — a deliberate delayed sync with a UI timer, not state derived
+  // from props/state already in React.
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
+    setOverlayEnabled(false);
+    if (chunkLoading || !chunkData) return;
+    const t = setTimeout(() => setOverlayEnabled(true), 300);
+    return () => clearTimeout(t);
+  }, [currentChunk, chunkLoading, chunkData]);
 
   // Background chunk cache, keyed by chunk index. Only ever read/written
   // from callbacks (never during render) so it stays outside React's
@@ -450,17 +475,24 @@ export function Reader({ bookId }: ReaderProps) {
               — blank page —
             </p>
           ) : (
-            <div
-              style={{
-                fontSize: `${settings.fontSize}px`,
-                lineHeight: settings.lineHeight,
-              }}
-              className="space-y-[1em]"
-            >
-              {paragraphs.map((p, i) => (
-                <p key={i}>{p}</p>
-              ))}
-            </div>
+            <>
+              {overlayState.status === "ready" &&
+              overlayState.overlay.imageUrl &&
+              !overlayState.overlay.imageIsForwardFill ? (
+                <ChapterPlate overlay={overlayState.overlay} />
+              ) : null}
+              <div
+                style={{
+                  fontSize: `${settings.fontSize}px`,
+                  lineHeight: settings.lineHeight,
+                }}
+                className="space-y-[1em]"
+              >
+                {paragraphs.map((p, i) => (
+                  <p key={i}>{p}</p>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </main>
@@ -476,7 +508,13 @@ export function Reader({ bookId }: ReaderProps) {
         />
       </div>
 
-      <WorldRail bookId={bookId} open={railOpen} onClose={() => setRailOpen(false)} />
+      <WorldRail
+        bookId={bookId}
+        open={railOpen}
+        onClose={() => setRailOpen(false)}
+        currentChunk={currentChunk}
+        overlay={overlayState}
+      />
     </div>
   );
 }
