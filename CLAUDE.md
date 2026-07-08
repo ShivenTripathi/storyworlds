@@ -12,8 +12,11 @@ The repo is being rebuilt from an Emergent-platform hackathon prototype into a p
 - **Drizzle ORM**: PGlite at `.data/pglite` in dev (no DATABASE_URL) / Neon Postgres in prod. One client: `src/db/index.ts`. Schema: `src/db/schema.ts`. Migrations: `npm run db:generate`.
 - **Clerk** auth (`@clerk/nextjs` v7 — use `<Show when="signed-in">`, NOT the removed `SignedIn/SignedOut`). Auth checks are resource-based (`await auth.protect()` in protected layouts), NOT route-matcher middleware (deprecated + broken in keyless mode). Keyless dev: on first boot Clerk writes `.clerk/.tmp/keyless.json`; promote those keys into `.env.local` (`node -e` one-liner, see git history) or protected routes 500.
 - **Inngest** for the book-analysis pipeline (dev: `npx inngest-cli dev`)
-- **LLM**: direct `@anthropic-ai/sdk` + `@google/genai`; model IDs from env (`MODEL_SEGMENT`, `MODEL_SYNTHESIS`, `MODEL_CHAT`, `MODEL_IMAGE`); mock driver when keys absent
-- **Storage**: local `.data/` in dev, Cloudflare R2 in prod, behind `src/services/storage.ts`
+- **LLM**: direct SDKs; model slots from env (`MODEL_SEGMENT`, `MODEL_SYNTHESIS`, `MODEL_CHAT`, `MODEL_IMAGE`), provider by prefix (`gemini:`/`anthropic:`); mock driver when keys absent
+- **Storage**: local `.data/` in dev; prod default is the DB-backed driver (Neon bytea + cached `/api/files/` route) behind `src/services/storage.ts` — R2 exists as a driver but needs a payment card
+
+## ZERO-COST CONSTRAINT (hard requirement from the founder)
+Production must run on **card-free free tiers only**: Vercel Hobby + Neon free + Clerk free + Inngest free + Google AI Studio free tier (Gemini Flash ≈ 15 RPM / 1,500 RPD — keep pipeline concurrency ≤3 and back off on 429). No R2 (card required). No paid image generation (Gemini image API is paid-only); the image driver must support 'none' gracefully. Never add a dependency or integration that requires payment or a card without flagging it to the user first.
 
 ## Architecture rules
 

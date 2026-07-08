@@ -10,6 +10,8 @@ export interface BookSummary {
   totalChunks: number | null;
   totalWords: number | null;
   createdAt: string;
+  /** Present once the book's world has been analyzed; drives the reader's per-book theme. */
+  themeArchetype?: string | null;
 }
 
 export interface ReadingProgress {

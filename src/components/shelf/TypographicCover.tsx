@@ -8,6 +8,8 @@ interface TypographicCoverProps {
   author?: string | null;
   size?: CoverSize;
   className?: string;
+  /** Real analyzed archetype; overrides the hash-based placeholder. */
+  archetype?: string | null;
 }
 
 const TITLE_SIZE_CLASSES = {
@@ -35,8 +37,9 @@ export function TypographicCover({
   author,
   size = "md",
   className = "",
+  archetype: archetypeOverride,
 }: TypographicCoverProps) {
-  const archetype = archetypeForBook(bookId);
+  const archetype = archetypeOverride ?? archetypeForBook(bookId);
   const titleSize = titleSizeFor(title);
 
   return (

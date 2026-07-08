@@ -1,0 +1,130 @@
+import { ARCHETYPES } from "@/theme/archetypes";
+
+/**
+ * Deterministic fake LLM driver used when ANTHROPIC_API_KEY is unset. Output
+ * shapes match `src/domain/schemas.ts` (SegmentAnalysisSchema /
+ * WorldSynthesisSchema) closely enough to parse through the real zod schemas
+ * — `completeJson` in client.ts still validates everything this returns.
+ */
+
+export interface MockDriverRunOpts {
+  operation: "segment" | "synthesis" | "chat" | "overlay";
+  model: string;
+  system: string;
+  prompt: string;
+  jsonSchema: Record<string, unknown>;
+  maxTokens: number;
+}
+
+export interface MockDriverResult {
+  raw: unknown;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+const STOPWORDS = new Set([
+  "The",
+  "This",
+  "That",
+  "Page",
+  "Segment",
+  "Extract",
+  "Book",
+]);
+
+/** Pull up to `limit` capitalized multi-occurrence words out of `text`. */
+function extractCapitalizedNames(text: string, limit: number): string[] {
+  const matches = text.match(/\b[A-Z][a-z]{2,}\b/g) ?? [];
+  const counts = new Map<string, number>();
+  for (const word of matches) {
+    if (STOPWORDS.has(word)) continue;
+    counts.set(word, (counts.get(word) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .filter(([, count]) => count > 1)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([name]) => name);
+}
+
+export class MockDriver {
+  readonly provider = "mock";
+
+  async run(opts: MockDriverRunOpts): Promise<MockDriverResult> {
+    const raw = buildMockOutput(opts.operation, opts.prompt);
+    return {
+      raw,
+      model: `${opts.model}-mock`,
+      inputTokens: 0,
+      outputTokens: 0,
+    };
+  }
+}
+
+function buildMockOutput(operation: MockDriverRunOpts["operation"], prompt: string): unknown {
+  switch (operation) {
+    case "segment":
+      return buildMockSegment(prompt);
+    case "synthesis":
+      return buildMockSynthesis(prompt);
+    default:
+      return { text: "Mock response." };
+  }
+}
+
+function buildMockSegment(prompt: string) {
+  const names = extractCapitalizedNames(prompt, 8);
+
+  return {
+    entities: names.map((name) => ({
+      name,
+      kind: "character" as const,
+      aliases: [name],
+      description: `${name} appears in this segment.`,
+      visualDescription: `A figure known as ${name}.`,
+      firstSeenPage: undefined,
+    })),
+    events: [
+      { summary: "An early event occurs in this segment.", page: undefined },
+      { summary: "A later event occurs in this segment.", page: undefined },
+    ],
+    settingNotes: "A generic setting, atmosphere unspecified (mock).",
+  };
+}
+
+function buildMockSynthesis(prompt: string) {
+  const names = extractCapitalizedNames(prompt, 8);
+  const entityNames = names.length > 0 ? names : ["Protagonist"];
+
+  return {
+    settingDescription: "A world synthesized from mock analysis notes.",
+    visualStyle: {
+      artStyle: "engraved illustration",
+      colorPalette: "warm amber",
+      mood: "contemplative",
+      eraSetting: "unknown",
+      themeArchetype: ARCHETYPES[0],
+    },
+    entities: entityNames.map((name) => ({
+      name,
+      kind: "character" as const,
+      aliases: [name],
+      attributes: {
+        role: "unknown",
+        internalState: undefined,
+        keyMotivation: undefined,
+        scars: undefined,
+      },
+      visualDescription: `A figure known as ${name}.`,
+      introducedAtPage: undefined,
+    })),
+    timeline: [
+      { label: "Beginning", summary: "The story begins.", approxPage: 1 },
+      { label: "Middle", summary: "The story develops.", approxPage: undefined },
+      { label: "End", summary: "The story concludes.", approxPage: undefined },
+    ],
+    commitments: [{ claim: "A fact established early in the book.", status: "open" as const }],
+    unknowns: [{ question: "An open question raised by the book.", kind: "mystery" }],
+  };
+}

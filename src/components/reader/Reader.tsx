@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchBook, fetchChunk, putProgress, ReaderApiError } from "./api";
 import { ReaderSettings } from "./ReaderSettings";
+import { WorldRail } from "./WorldRail";
 import {
   DEFAULT_SETTINGS,
   faceFamily,
@@ -34,6 +35,7 @@ export function Reader({ bookId }: ReaderProps) {
   const [chunkData, setChunkData] = useState<ChunkPayload | null>(null);
   const [chunkLoading, setChunkLoading] = useState(true);
   const [chromeVisible, setChromeVisible] = useState(true);
+  const [railOpen, setRailOpen] = useState(false);
   const [settings, setSettings] = useState<ReaderSettingsState>(
     DEFAULT_SETTINGS,
   );
@@ -225,12 +227,20 @@ export function Reader({ bookId }: ReaderProps) {
         wakeChrome();
         goPrev();
       } else if (e.key === "Escape") {
-        window.location.href = "/shelf";
+        if (railOpen) {
+          e.stopPropagation();
+          setRailOpen(false);
+        } else {
+          window.location.href = "/shelf";
+        }
+      } else if (e.key === "w" || e.key === "W") {
+        wakeChrome();
+        setRailOpen((v) => !v);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [goNext, goPrev, wakeChrome]);
+  }, [goNext, goPrev, railOpen, wakeChrome]);
 
   useEffect(() => {
     return () => {
@@ -292,6 +302,7 @@ export function Reader({ bookId }: ReaderProps) {
   return (
     <div
       ref={containerRef}
+      data-world-theme={book?.themeArchetype ?? undefined}
       className="fixed inset-0 z-30 overflow-y-auto"
       style={
         {
@@ -344,7 +355,23 @@ export function Reader({ bookId }: ReaderProps) {
           {pageLabel ? <p className="eyebrow mt-0.5">{pageLabel}</p> : null}
         </div>
 
-        <ReaderSettings settings={settings} onChange={setSettings} />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            aria-label="Toggle story world panel"
+            aria-pressed={railOpen}
+            onClick={() => setRailOpen((v) => !v)}
+            className="flex h-9 min-w-9 items-center justify-center rounded-full border px-3 font-ui text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            style={{
+              background: "var(--card)",
+              borderColor: "var(--border)",
+              color: "var(--card-foreground)",
+            }}
+          >
+            World
+          </button>
+          <ReaderSettings settings={settings} onChange={setSettings} />
+        </div>
       </header>
 
       {/* Mobile floating cluster (shown when chrome is hidden) */}
@@ -407,7 +434,11 @@ export function Reader({ bookId }: ReaderProps) {
       </button>
 
       {/* Text column */}
-      <main className="relative z-10 mx-auto min-h-full px-6 pt-24 pb-20">
+      <main
+        className={`relative z-10 mx-auto min-h-full px-6 pt-24 pb-20 transition-[padding] duration-300 motion-reduce:transition-none ${
+          railOpen ? "md:pr-[340px]" : ""
+        }`}
+      >
         <div
           className="mx-auto"
           style={{ maxWidth: `${ch}ch`, fontFamily: family }}
@@ -444,6 +475,8 @@ export function Reader({ bookId }: ReaderProps) {
           style={{ width: `${progressPct}%`, background: "var(--world-accent)" }}
         />
       </div>
+
+      <WorldRail bookId={bookId} open={railOpen} onClose={() => setRailOpen(false)} />
     </div>
   );
 }
