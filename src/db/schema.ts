@@ -1,5 +1,6 @@
 import {
   bigserial,
+  customType,
   foreignKey,
   index,
   integer,
@@ -12,6 +13,13 @@ import {
   unique,
   uuid,
 } from "drizzle-orm/pg-core";
+
+// bytea column type — drizzle-orm/pg-core has no built-in bytea helper.
+const bytea = customType<{ data: Buffer }>({
+  dataType() {
+    return "bytea";
+  },
+});
 
 // ---------------------------------------------------------------------------
 // users
@@ -353,6 +361,21 @@ export const subscriptions = pgTable("subscriptions", {
     .defaultNow()
     .notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// storedFiles — DB-backed blob storage (zero-cost storage driver; see
+// src/services/storage.ts DbStorageDriver). Used in prod instead of R2,
+// which requires a card.
+// ---------------------------------------------------------------------------
+export const storedFiles = pgTable("stored_files", {
+  key: text("key").primaryKey(),
+  data: bytea("data").notNull(),
+  contentType: text("content_type"),
+  size: integer("size"),
+  createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
 });

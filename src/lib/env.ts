@@ -18,7 +18,9 @@ const envSchema = z.object({
   CLERK_SECRET_KEY: z.string().optional(),
 
   // --- Storage ---
-  STORAGE_DRIVER: z.enum(["local", "r2"]).default("local"),
+  // 'local' (dev filesystem), 'db' (Neon bytea — zero-cost prod default), or
+  // 'r2' (Cloudflare R2 — requires a card, avoid in the card-free profile).
+  STORAGE_DRIVER: z.enum(["local", "db", "r2"]).default("local"),
   R2_ENDPOINT: z.string().optional(),
   R2_ACCESS_KEY_ID: z.string().optional(),
   R2_SECRET_ACCESS_KEY: z.string().optional(),
@@ -26,13 +28,18 @@ const envSchema = z.object({
 
   // --- LLM providers ---
   ANTHROPIC_API_KEY: z.string().optional(),
+  // Google AI Studio free-tier key (no card required): aistudio.google.com/apikey
   GOOGLE_API_KEY: z.string().optional(),
 
   // --- Model slots ---
-  MODEL_SEGMENT: z.string().default("claude-haiku-4-5"),
-  MODEL_SYNTHESIS: z.string().default("claude-haiku-4-5"),
-  MODEL_CHAT: z.string().default("claude-haiku-4-5"),
-  MODEL_IMAGE: z.string().default("gemini-2.5-flash-image"),
+  // Values may be provider-prefixed (`gemini:gemini-2.5-flash-lite`,
+  // `anthropic:claude-haiku-4-5`); a bare model name is treated as
+  // `anthropic:` for backward compat. Defaults target Google AI Studio's
+  // free tier (card-free) — see ZERO-COST CONSTRAINT in CLAUDE.md.
+  MODEL_SEGMENT: z.string().default("gemini:gemini-2.5-flash-lite"),
+  MODEL_SYNTHESIS: z.string().default("gemini:gemini-2.5-flash"),
+  MODEL_CHAT: z.string().default("gemini:gemini-2.5-flash-lite"),
+  MODEL_IMAGE: z.string().default("none"),
 
   // --- App ---
   APP_URL: z.string().url().default("http://localhost:3000"),

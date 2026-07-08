@@ -1,5 +1,8 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { eq, sql } from "drizzle-orm";
+import { db, dbReady } from "@/db";
+import { storedFiles } from "@/db/schema";
 import { env } from "@/lib/env";
 
 export interface StorageDriver {
@@ -146,10 +149,63 @@ class R2StorageDriver implements StorageDriver {
   }
 }
 
-function createStorageDriver(): StorageDriver {
-  return env.STORAGE_DRIVER === "r2"
-    ? new R2StorageDriver()
-    : new LocalStorageDriver();
+// ---------------------------------------------------------------------------
+// DB-backed driver — Neon/PGlite bytea column. Zero-cost prod default: R2
+// requires a card, this doesn't. Reads/writes go through src/db/index.ts's
+// shared client; served to clients via src/app/api/files/[...key]/route.ts.
+// ---------------------------------------------------------------------------
+
+class DbStorageDriver implements StorageDriver {
+  async put(key: string, data: Uint8Array, contentType: string): Promise<void> {
+    await dbReady;
+    const buf = Buffer.from(data);
+    await db
+      .insert(storedFiles)
+      .values({ key, data: buf, contentType, size: buf.byteLength })
+      .onConflictDoUpdate({
+        target: storedFiles.key,
+        set: { data: buf, contentType, size: buf.byteLength },
+      });
+  }
+
+  async get(key: string): Promise<Uint8Array> {
+    await dbReady;
+    const [row] = await db
+      .select({ data: storedFiles.data })
+      .from(storedFiles)
+      .where(eq(storedFiles.key, key))
+      .limit(1);
+    if (!row) {
+      throw new Error(`File not found: ${key}`);
+    }
+    return new Uint8Array(row.data);
+  }
+
+  async delete(key: string): Promise<void> {
+    await dbReady;
+    await db.delete(storedFiles).where(eq(storedFiles.key, key));
+  }
+
+  async deletePrefix(prefix: string): Promise<void> {
+    await dbReady;
+    // Escape LIKE metacharacters in the prefix, then match `prefix%`.
+    const escaped = prefix.replace(/[\\%_]/g, (c) => `\\${c}`);
+    await db
+      .delete(storedFiles)
+      .where(sql`${storedFiles.key} LIKE ${escaped + "%"} ESCAPE '\\'`);
+  }
+
+  async getUrl(key: string): Promise<string> {
+    return `/api/files/${key}`;
+  }
 }
+
+function createStorageDriver(): StorageDriver {
+  if (env.STORAGE_DRIVER === "r2") return new R2StorageDriver();
+  if (env.STORAGE_DRIVER === "db") return new DbStorageDriver();
+  return new LocalStorageDriver();
+}
+
+export { DbStorageDriver };
 
 export const storage: StorageDriver = createStorageDriver();
