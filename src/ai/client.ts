@@ -33,6 +33,23 @@ interface LlmDriver {
     jsonSchema: Record<string, unknown>;
     maxTokens: number;
   }): Promise<DriverResult>;
+  stream(opts: {
+    model: string;
+    system: string;
+    prompt: string;
+    maxTokens: number;
+  }): Promise<StreamDriverResult>;
+}
+
+interface StreamDriverResult {
+  // Plain-text deltas, in order. Never includes non-text (tool-use, etc)
+  // content — chat is always plain-text.
+  textStream: AsyncIterable<string>;
+  // Resolves once the stream has fully completed. Never rejects on its own
+  // (drivers resolve with zeroed tokens on a metering miss rather than
+  // failing an otherwise-successful chat reply).
+  usage: Promise<{ inputTokens: number; outputTokens: number }>;
+  model: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,6 +270,50 @@ class AnthropicDriver implements LlmDriver {
       outputTokens: response.usage?.output_tokens ?? 0,
     };
   }
+
+  async stream(opts: {
+    model: string;
+    system: string;
+    prompt: string;
+    maxTokens: number;
+  }): Promise<StreamDriverResult> {
+    const client = await this.getClient();
+
+    // Same 429 backoff as the JSON path's driver — opening the stream is the
+    // one request that can be safely retried; once text starts flowing we
+    // let errors surface to the caller instead of silently restarting.
+    const messageStream = await withRateLimitBackoff(() =>
+      Promise.resolve(
+        client.messages.stream({
+          model: opts.model,
+          max_tokens: opts.maxTokens,
+          system: opts.system,
+          messages: [{ role: "user", content: opts.prompt }],
+        }),
+      ),
+    );
+
+    async function* textStream(): AsyncGenerator<string> {
+      for await (const event of messageStream) {
+        if (
+          event.type === "content_block_delta" &&
+          event.delta.type === "text_delta"
+        ) {
+          yield event.delta.text;
+        }
+      }
+    }
+
+    const usage = messageStream.finalMessage().then(
+      (message) => ({
+        inputTokens: message.usage?.input_tokens ?? 0,
+        outputTokens: message.usage?.output_tokens ?? 0,
+      }),
+      () => ({ inputTokens: 0, outputTokens: 0 }),
+    );
+
+    return { textStream: textStream(), usage, model: opts.model };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -276,6 +337,37 @@ function isRateLimitError(err: unknown): boolean {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Retries `fn` on a 429/RESOURCE_EXHAUSTED error with exponential backoff +
+ * jitter, up to GEMINI_BACKOFF_MAX_ATTEMPTS attempts. Shared by both drivers
+ * for the one request that's safe to retry: establishing the initial
+ * connection (JSON completion, or opening a stream) — never mid-stream,
+ * since a partial reply can't be safely restarted transparently.
+ */
+async function withRateLimitBackoff<T>(fn: () => Promise<T>): Promise<T> {
+  let attempt = 0;
+  for (;;) {
+    try {
+      return await fn();
+    } catch (err) {
+      attempt += 1;
+      if (!isRateLimitError(err) || attempt >= GEMINI_BACKOFF_MAX_ATTEMPTS) {
+        throw err;
+      }
+      const delay = Math.min(
+        GEMINI_BACKOFF_MAX_MS,
+        GEMINI_BACKOFF_BASE_MS * GEMINI_BACKOFF_FACTOR ** (attempt - 1),
+      );
+      const jitter = Math.random() * delay * 0.25;
+      const waitMs = Math.round(delay + jitter);
+      console.warn(
+        `[ai] rate limit hit (attempt ${attempt}/${GEMINI_BACKOFF_MAX_ATTEMPTS}) — retrying in ${waitMs}ms`,
+      );
+      await sleep(waitMs);
+    }
+  }
 }
 
 class GeminiDriver implements LlmDriver {
@@ -355,6 +447,48 @@ class GeminiDriver implements LlmDriver {
         await sleep(waitMs);
       }
     }
+  }
+
+  async stream(opts: {
+    model: string;
+    system: string;
+    prompt: string;
+    maxTokens: number;
+  }): Promise<StreamDriverResult> {
+    const client = await this.getClient();
+
+    const generator = await withRateLimitBackoff(() =>
+      client.models.generateContentStream({
+        model: opts.model,
+        contents: opts.prompt,
+        config: {
+          systemInstruction: opts.system,
+          maxOutputTokens: opts.maxTokens,
+        },
+      }),
+    );
+
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let resolveUsage!: (usage: { inputTokens: number; outputTokens: number }) => void;
+    const usage = new Promise<{ inputTokens: number; outputTokens: number }>((resolve) => {
+      resolveUsage = resolve;
+    });
+
+    async function* textStream(): AsyncGenerator<string> {
+      for await (const chunk of generator) {
+        if (chunk.usageMetadata) {
+          inputTokens = chunk.usageMetadata.promptTokenCount ?? inputTokens;
+          outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens;
+        }
+        if (chunk.text) {
+          yield chunk.text;
+        }
+      }
+      resolveUsage({ inputTokens, outputTokens });
+    }
+
+    return { textStream: textStream(), usage, model: opts.model };
   }
 }
 
@@ -462,4 +596,64 @@ export async function completeJson<S extends z.ZodTypeAny>(
   throw lastError instanceof Error
     ? lastError
     : new Error("completeJson: schema validation failed after retry");
+}
+
+// ---------------------------------------------------------------------------
+// streamText — plain-text streaming entry point for chat. Distinct from
+// completeJson because chat replies are free-form prose, not tool-shaped
+// JSON: no schema, no retry-on-parse-failure (there's nothing to parse), and
+// the caller gets tokens as they arrive instead of a single parsed result.
+// ---------------------------------------------------------------------------
+
+export interface StreamTextOptions {
+  operation: "chat";
+  system: string;
+  prompt: string;
+  bookId?: string;
+  userId?: string;
+  maxTokens?: number;
+}
+
+export interface StreamTextResult {
+  stream: AsyncIterable<string>;
+  // Resolves once usageEvents has been recorded for this call (or logged and
+  // swallowed on a metering failure — a failed usage write never fails an
+  // otherwise-successful chat reply).
+  usage: Promise<{ inputTokens: number; outputTokens: number }>;
+}
+
+const DEFAULT_CHAT_MAX_TOKENS = 1024;
+
+/**
+ * Streaming counterpart to `completeJson`, used for character chat. Selects
+ * a driver the same way (Anthropic if configured, else Gemini free tier,
+ * else MockDriver), streams plain-text deltas, and records exactly one
+ * usageEvents row once the model has finished responding.
+ */
+export async function streamText(opts: StreamTextOptions): Promise<StreamTextResult> {
+  const { provider, model } = parseModelSlot(modelForOperation(opts.operation));
+  const driver = getDriver(provider);
+  const maxTokens = opts.maxTokens ?? DEFAULT_CHAT_MAX_TOKENS;
+
+  const result = await driver.stream({
+    model,
+    system: opts.system,
+    prompt: opts.prompt,
+    maxTokens,
+  });
+
+  const usage = result.usage.then(async (u) => {
+    await recordUsage({
+      operation: opts.operation,
+      provider: driver.provider,
+      model: result.model,
+      inputTokens: u.inputTokens,
+      outputTokens: u.outputTokens,
+      bookId: opts.bookId,
+      userId: opts.userId,
+    });
+    return u;
+  });
+
+  return { stream: result.textStream, usage };
 }

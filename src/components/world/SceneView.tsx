@@ -13,13 +13,20 @@ interface SceneViewProps {
    * the same page.
    */
   preloaded?: OverlayState;
+  /**
+   * Activates the "ask the characters" affordance: called with the
+   * question text when a suggested question is clicked. When omitted, the
+   * rows render in their inert, disabled style (e.g. the book detail page,
+   * which has no rail to switch tabs in).
+   */
+  onAskQuestion?: (question: string) => void;
 }
 
 /**
  * The rail's "Scene" tab: illustration + scene description + active cast
  * + (eventually) character chat hooks for the page currently on screen.
  */
-export function SceneView({ bookId, chunkIdx, preloaded }: SceneViewProps) {
+export function SceneView({ bookId, chunkIdx, preloaded, onAskQuestion }: SceneViewProps) {
   const ownOverlay = useOverlay(bookId, chunkIdx, { enabled: !preloaded });
   const state = preloaded ?? ownOverlay.state;
   const retry = preloaded ? undefined : ownOverlay.retry;
@@ -123,17 +130,31 @@ export function SceneView({ bookId, chunkIdx, preloaded }: SceneViewProps) {
         <section>
           <p className="eyebrow mb-1.5">ASK THE CHARACTERS</p>
           <ul className="space-y-1.5">
-            {overlay.suggestedQuestions.map((q, i) => (
-              <li
-                key={i}
-                title="Character chat arrives soon"
-                className="font-ui flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs text-muted-foreground opacity-70"
-                style={{ borderColor: "var(--world-frame)" }}
-              >
-                <ChatGlyph />
-                <span className="min-w-0 flex-1">{q}</span>
-              </li>
-            ))}
+            {overlay.suggestedQuestions.map((q, i) =>
+              onAskQuestion ? (
+                <li key={i}>
+                  <button
+                    type="button"
+                    onClick={() => onAskQuestion(q)}
+                    className="font-ui flex w-full items-center gap-2 rounded-md border px-2.5 py-2 text-left text-xs transition-colors hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    style={{ borderColor: "var(--world-frame)" }}
+                  >
+                    <ChatGlyph />
+                    <span className="min-w-0 flex-1">{q}</span>
+                  </button>
+                </li>
+              ) : (
+                <li
+                  key={i}
+                  title="Open the Chat tab to ask this"
+                  className="font-ui flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs text-muted-foreground opacity-70"
+                  style={{ borderColor: "var(--world-frame)" }}
+                >
+                  <ChatGlyph />
+                  <span className="min-w-0 flex-1">{q}</span>
+                </li>
+              ),
+            )}
           </ul>
         </section>
       ) : null}

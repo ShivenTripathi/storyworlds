@@ -1,15 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ChatPanel } from "@/components/chat/ChatPanel";
 import { WorldFormingCard } from "@/components/world/WorldFormingCard";
 import { CastList } from "@/components/world/CastList";
+import { ProgressChip } from "@/components/world/ProgressChip";
 import { SceneView } from "@/components/world/SceneView";
 import { useJob } from "@/components/world/useJob";
 import { analyzeBook, fetchWorld } from "@/components/world/api";
-import type { World } from "@/components/world/types";
+import type { World, WorldEntity } from "@/components/world/types";
 import type { OverlayState } from "./useOverlay";
 
-type WorldTab = "scene" | "cast";
+type WorldTab = "scene" | "cast" | "chat";
+
+function isCharacter(entity: WorldEntity): boolean {
+  const k = entity.kind.toLowerCase().replace(/s$/, "");
+  return k === "character" || k === "person";
+}
 
 interface WorldRailProps {
   bookId: string;
@@ -36,6 +43,8 @@ export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: Worl
   const [loaded, setLoaded] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [tab, setTab] = useState<WorldTab>("scene");
+  const [chatEntityId, setChatEntityId] = useState<string | null>(null);
+  const [chatInitialMessage, setChatInitialMessage] = useState<string | undefined>(undefined);
   const { job } = useJob(jobId);
   const panelRef = useRef<HTMLDivElement>(null);
   const prevJobStatus = useRef<string | null>(null);
@@ -87,6 +96,17 @@ export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: Worl
     }
   }
 
+  const handleAskQuestion = useCallback(
+    (question: string) => {
+      const firstCharacter = world?.entities?.find(isCharacter);
+      if (!firstCharacter) return;
+      setChatEntityId(firstCharacter.id);
+      setChatInitialMessage(question);
+      setTab("chat");
+    },
+    [world],
+  );
+
   if (!open) return null;
 
   const status = world?.status ?? "none";
@@ -128,6 +148,7 @@ export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: Worl
         <div className="flex items-center gap-4 border-b px-4 pb-2" style={{ borderColor: "var(--world-frame)" }}>
           <TabButton label="Scene" active={tab === "scene"} onClick={() => setTab("scene")} />
           <TabButton label="Cast" active={tab === "cast"} onClick={() => setTab("cast")} />
+          <TabButton label="Chat" active={tab === "chat"} onClick={() => setTab("chat")} />
         </div>
       ) : null}
 
@@ -135,18 +156,45 @@ export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: Worl
         {!loaded ? (
           <p className="font-ui text-sm text-muted-foreground">Opening the world…</p>
         ) : status === "completed" && world ? (
-          <div className="space-y-6">
+          <div className={tab === "chat" ? "flex h-[calc(60vh-96px)] flex-col md:h-[calc(100vh-96px)]" : "space-y-6"}>
             {tab === "scene" ? (
-              <SceneView bookId={bookId} chunkIdx={currentChunk} preloaded={overlay} />
-            ) : (
+              <SceneView
+                bookId={bookId}
+                chunkIdx={currentChunk}
+                preloaded={overlay}
+                onAskQuestion={handleAskQuestion}
+              />
+            ) : tab === "cast" ? (
               <>
                 {world.settingDescription ? (
                   <p className="font-reading text-sm leading-relaxed">{world.settingDescription}</p>
                 ) : null}
                 {world.entities && world.entities.length > 0 ? (
-                  <CastList entities={world.entities} counts={world.counts} />
+                  <CastList
+                    entities={world.entities}
+                    counts={world.counts}
+                    bookId={bookId}
+                    onChat={(entityId) => {
+                      setChatEntityId(entityId);
+                      setChatInitialMessage(undefined);
+                      setTab("chat");
+                    }}
+                  />
                 ) : null}
               </>
+            ) : (
+              <ChatTab
+                bookId={bookId}
+                entities={world.entities ?? []}
+                chunkIdx={currentChunk}
+                entityId={chatEntityId}
+                initialMessage={chatInitialMessage}
+                onSelect={(id) => {
+                  setChatEntityId(id);
+                  setChatInitialMessage(undefined);
+                }}
+                onBack={() => setChatEntityId(null)}
+              />
             )}
           </div>
         ) : isFailed ? (
@@ -175,6 +223,85 @@ export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: Worl
             </button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The rail's Chat tab: a character picker when nothing's selected yet, or
+ * the docked conversation itself (with a back arrow to the picker).
+ */
+function ChatTab({
+  bookId,
+  entities,
+  chunkIdx,
+  entityId,
+  initialMessage,
+  onSelect,
+  onBack,
+}: {
+  bookId: string;
+  entities: World["entities"];
+  chunkIdx: number;
+  entityId: string | null;
+  initialMessage?: string;
+  onSelect: (entityId: string) => void;
+  onBack: () => void;
+}) {
+  const characters = (entities ?? []).filter(isCharacter);
+  const selected = entityId ? characters.find((e) => e.id === entityId) : undefined;
+
+  if (!selected) {
+    if (characters.length === 0) {
+      return (
+        <p className="font-ui text-sm text-muted-foreground italic">
+          No one has stepped into the light yet.
+        </p>
+      );
+    }
+    return (
+      <div className="space-y-1">
+        <p className="eyebrow mb-2">WHO WOULD YOU LIKE TO TALK TO?</p>
+        <ul className="space-y-1">
+          {characters.map((entity) => (
+            <li key={entity.id}>
+              <button
+                type="button"
+                onClick={() => onSelect(entity.id)}
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              >
+                <span className="font-display text-base">{entity.name}</span>
+                <ProgressChip introducedAtChunk={entity.introducedAtChunk} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <button
+        type="button"
+        onClick={onBack}
+        className="font-ui mb-2 flex items-center gap-1.5 self-start text-xs text-muted-foreground hover:text-[var(--card-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+      >
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        All characters
+      </button>
+      <div className="min-h-0 flex-1">
+        <ChatPanel
+          key={selected.id}
+          bookId={bookId}
+          entityId={selected.id}
+          entityName={selected.name}
+          chunkIdx={chunkIdx}
+          initialMessage={initialMessage}
+        />
       </div>
     </div>
   );

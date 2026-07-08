@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import type { WorldCounts, WorldEntity } from "./types";
 
@@ -7,6 +8,10 @@ interface CastListProps {
   entities: WorldEntity[];
   counts?: WorldCounts;
   className?: string;
+  /** Enables "Dossier →" links (and, with `onChat`, chat buttons) — omitted callers just get the plain roster. */
+  bookId?: string;
+  /** When provided, character rows get a quiet "Chat" button that calls this with the entity id. */
+  onChat?: (entityId: string) => void;
 }
 
 const KIND_ORDER = ["character", "place", "object", "faction"] as const;
@@ -51,7 +56,7 @@ function groupEntities(entities: WorldEntity[]) {
  * click to reveal the deeper "brass plaque" details. Hidden entities
  * (beyond the reader's spoiler frontier) are never named — only counted.
  */
-export function CastList({ entities, counts, className = "" }: CastListProps) {
+export function CastList({ entities, counts, className = "", bookId, onChat }: CastListProps) {
   const groups = groupEntities(entities);
   const hidden = counts && counts.total > counts.visible ? counts.total - counts.visible : 0;
 
@@ -70,7 +75,12 @@ export function CastList({ entities, counts, className = "" }: CastListProps) {
           <p className="eyebrow mb-2">{group.label}</p>
           <ul className="space-y-1">
             {group.entities.map((entity) => (
-              <EntityRow key={entity.id} entity={entity} />
+              <EntityRow
+                key={entity.id}
+                entity={entity}
+                bookId={bookId}
+                onChat={group.key === "character" ? onChat : undefined}
+              />
             ))}
           </ul>
         </section>
@@ -86,19 +96,28 @@ export function CastList({ entities, counts, className = "" }: CastListProps) {
   );
 }
 
-function EntityRow({ entity }: { entity: WorldEntity }) {
+function EntityRow({
+  entity,
+  bookId,
+  onChat,
+}: {
+  entity: WorldEntity;
+  bookId?: string;
+  onChat?: (entityId: string) => void;
+}) {
   const [expanded, setExpanded] = useState(false);
   const { attributes } = entity;
   const hasDetail = Boolean(
     attributes?.internalState || attributes?.keyMotivation || entity.visualDescription || attributes?.scars,
   );
+  const expandable = hasDetail || Boolean(bookId);
 
   return (
     <li className="rounded-md border border-transparent hover:border-[var(--world-frame)]">
       <button
         type="button"
-        onClick={() => hasDetail && setExpanded((v) => !v)}
-        aria-expanded={hasDetail ? expanded : undefined}
+        onClick={() => expandable && setExpanded((v) => !v)}
+        aria-expanded={expandable ? expanded : undefined}
         className="flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
         <span className="font-display text-base">{entity.name}</span>
@@ -109,7 +128,7 @@ function EntityRow({ entity }: { entity: WorldEntity }) {
         ) : null}
       </button>
 
-      {expanded && hasDetail ? (
+      {expanded && expandable ? (
         <div className="space-y-2 px-2 pb-3">
           {attributes?.internalState ? (
             <DetailRow label="INTERNAL STATE" value={attributes.internalState} />
@@ -120,6 +139,30 @@ function EntityRow({ entity }: { entity: WorldEntity }) {
           {attributes?.scars ? <DetailRow label="SCARS" value={attributes.scars} /> : null}
           {entity.visualDescription ? (
             <DetailRow label="APPEARANCE" value={entity.visualDescription} />
+          ) : null}
+
+          {bookId || onChat ? (
+            <div className="flex items-center gap-3 pt-1">
+              {bookId ? (
+                <Link
+                  href={`/books/${bookId}/characters/${entity.id}`}
+                  className="font-ui text-xs font-medium underline decoration-dotted underline-offset-2"
+                  style={{ color: "var(--world-accent)" }}
+                >
+                  Dossier →
+                </Link>
+              ) : null}
+              {onChat ? (
+                <button
+                  type="button"
+                  onClick={() => onChat(entity.id)}
+                  className="font-ui text-xs font-medium underline decoration-dotted underline-offset-2"
+                  style={{ color: "var(--world-accent)" }}
+                >
+                  Chat
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </div>
       ) : null}

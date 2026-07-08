@@ -48,6 +48,46 @@ function extractCapitalizedNames(text: string, limit: number): string[] {
     .map(([name]) => name);
 }
 
+export interface MockDriverStreamOpts {
+  model: string;
+  system: string;
+  prompt: string;
+  maxTokens: number;
+}
+
+export interface MockDriverStreamResult {
+  textStream: AsyncIterable<string>;
+  usage: Promise<{ inputTokens: number; outputTokens: number }>;
+  model: string;
+}
+
+const MOCK_STREAM_WORD_DELAY_MS = 20;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Pull the character name out of a persona system prompt built by
+ * buildPersona ("You are {name}. Stay strictly in character. ..."). */
+function extractCharacterName(system: string): string {
+  const match = system.match(/^You are ([^.]+)\./);
+  return match ? match[1].trim() : "the character";
+}
+
+/** A deterministic, obviously-mock two-sentence in-character reply, so mock
+ * mode is visually distinguishable and streaming is testable end-to-end
+ * without a real model. */
+function buildMockChatReply(system: string, prompt: string): string {
+  const name = extractCharacterName(system);
+  const isFutureQuestion = /\b(happen|will|future|end up|fate|later|eventually)\b/i.test(
+    prompt,
+  );
+  if (isFutureQuestion) {
+    return `${name} looks away for a moment, uncertain. "I couldn't tell you what's still ahead of me — I only know what I've lived through so far."`;
+  }
+  return `${name} considers the question carefully. "That's closer to the truth of it than you might expect," ${name} says (mock reply).`;
+}
+
 export class MockDriver {
   readonly provider = "mock";
 
@@ -58,6 +98,26 @@ export class MockDriver {
       model: `${opts.model}-mock`,
       inputTokens: 0,
       outputTokens: 0,
+    };
+  }
+
+  async stream(opts: MockDriverStreamOpts): Promise<MockDriverStreamResult> {
+    const reply = buildMockChatReply(opts.system, opts.prompt);
+    // Split on whitespace but keep the delimiter attached to each word so
+    // re-joining the yielded deltas reproduces the original text exactly.
+    const words = reply.match(/\S+\s*/g) ?? [reply];
+
+    async function* textStream(): AsyncGenerator<string> {
+      for (const word of words) {
+        await sleep(MOCK_STREAM_WORD_DELAY_MS);
+        yield word;
+      }
+    }
+
+    return {
+      textStream: textStream(),
+      usage: Promise.resolve({ inputTokens: 0, outputTokens: 0 }),
+      model: `${opts.model}-mock`,
     };
   }
 }
