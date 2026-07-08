@@ -2,9 +2,9 @@
 
 "Cursor/Lovable for Literature" — an AI-augmented reading product. Core stance: **never summarize or abridge**; breathe life into the full text (illustrations, world reference, character chat, eventually what-if branches).
 
-## Status: mid-rebuild
+## Status: rebuilt (v1)
 
-The repo is being rebuilt from an Emergent-platform hackathon prototype into a production TypeScript monolith. **`backend/` and `frontend/` are FROZEN LEGACY** (Python/FastAPI + CRA) — never modify them; they exist only as reference until milestone M6 deletes them. The full audit + plan lives at `~/.claude/plans/this-repository-was-started-wiggly-reef.md`.
+Rebuilt 2026-07 from an Emergent-platform hackathon prototype into this TypeScript monolith; legacy code is deleted and git history was re-cut (the original history, which contained a leaked key, is archived offline in `~/storyworlds-pre-recut-backup.bundle`). The original audit + plan lives at `~/.claude/plans/this-repository-was-started-wiggly-reef.md`.
 
 ## Stack (new app, repo root)
 
