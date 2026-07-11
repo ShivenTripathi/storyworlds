@@ -4,6 +4,7 @@ import { db, dbReady } from "@/db";
 import { worldReferences } from "@/db/schema";
 import { requireBookAccess, requireUser } from "@/lib/auth";
 import { ApiError, handleApiError } from "@/lib/errors";
+import { rateLimit } from "@/lib/rate-limit";
 import { getOrGenerateOverlay, requestPrefetch } from "@/services/overlays";
 
 type Params = { params: Promise<{ bookId: string; idx: string }> };
@@ -19,6 +20,10 @@ export async function GET(_req: Request, { params }: Params) {
 
     const { userId } = await requireUser();
     const book = await requireBookAccess(bookId, userId);
+
+    // This route can trigger fresh LLM + image generation; rate-limit per user
+    // to protect the shared Gemini free-tier quota (same guard as upload/chat).
+    rateLimit(`user:${userId}:overlay`, { windowSeconds: 60, max: 30 });
 
     if (book.totalChunks === null || idx >= book.totalChunks) {
       throw new ApiError(404, "not_found", "Chunk not found.");

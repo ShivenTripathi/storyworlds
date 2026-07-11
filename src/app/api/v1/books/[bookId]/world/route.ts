@@ -20,10 +20,12 @@ export async function GET(req: Request, { params }: Params) {
     const { userId, keyId } = await requireApiKey(req);
     rateLimit(`key:${keyId}:v1`, { windowSeconds: 60, max: 60 });
 
-    await requireBookAccess(bookId, userId);
+    const book = await requireBookAccess(bookId, userId);
 
+    // Frontier filtering ON by default; only the owner may opt out with ?full=1.
     const url = new URL(req.url);
-    const useFrontier = url.searchParams.has("frontier");
+    const wantsFull = url.searchParams.get("full") === "1";
+    const useFrontier = !(wantsFull && book.ownerId === userId);
     const world = await getWorldForReader({ bookId, userId, useFrontier });
 
     return NextResponse.json({ world });

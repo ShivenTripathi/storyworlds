@@ -10,11 +10,17 @@ export async function GET(req: Request, { params }: Params) {
   try {
     await dbReady;
     const { bookId } = await params;
-    const { userId } = await requireUser();
-    await requireBookAccess(bookId, userId);
+    const { userId, role } = await requireUser();
+    const book = await requireBookAccess(bookId, userId);
 
+    // Frontier (spoiler) filtering is ON by default. The full, unfiltered
+    // world is only served to the book's owner or an admin when they
+    // explicitly opt in with ?full=1 (e.g. admin archetype preview) — a
+    // reader can never lift their own spoiler gate via a query param.
     const url = new URL(req.url);
-    const useFrontier = url.searchParams.has("frontier");
+    const wantsFull = url.searchParams.get("full") === "1";
+    const privileged = role === "admin" || book.ownerId === userId;
+    const useFrontier = !(wantsFull && privileged);
 
     const world = await getWorldForReader({ bookId, userId, useFrontier });
 

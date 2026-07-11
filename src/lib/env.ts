@@ -17,6 +17,14 @@ const envSchema = z.object({
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().optional(),
   CLERK_SECRET_KEY: z.string().optional(),
 
+  // --- Jobs / Inngest ---
+  // Read by the Inngest SDK directly; declared here so a boot check can warn.
+  // In production this MUST be set — without it `serve()` cannot verify request
+  // signatures and /api/inngest would accept unauthenticated function triggers.
+  INNGEST_SIGNING_KEY: z.string().optional(),
+  INNGEST_EVENT_KEY: z.string().optional(),
+  INNGEST_DEV: z.string().optional(),
+
   // --- Storage ---
   // 'local' (dev filesystem), 'db' (Neon bytea — zero-cost prod default), or
   // 'r2' (Cloudflare R2 — requires a card, avoid in the card-free profile).

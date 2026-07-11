@@ -44,11 +44,35 @@ interface TimelineItem {
   [key: string]: unknown;
 }
 
+// A character's inner life (motivation, scars, internal state) is a spoiler
+// until the reader has spent time with them — mirrors the same buffer the
+// chat persona builder uses so the dossier and chat never disagree.
+const INNER_LIFE_REVEAL_BUFFER_CHUNKS = 20;
+const INNER_LIFE_KEYS = ["internalState", "keyMotivation", "scars"];
+
+/** Strips inner-life fields from an entity's attributes until earned. */
+function reduceAttributes(
+  attributes: unknown,
+  introducedAtChunk: number | null,
+  frontierChunk: number | null,
+): unknown {
+  if (frontierChunk === null) return attributes; // unfiltered (owner/admin full view)
+  if (attributes === null || typeof attributes !== "object") return attributes;
+  const earned =
+    introducedAtChunk != null &&
+    frontierChunk >= introducedAtChunk + INNER_LIFE_REVEAL_BUFFER_CHUNKS;
+  if (earned) return attributes;
+  const out: Record<string, unknown> = { ...(attributes as Record<string, unknown>) };
+  for (const k of INNER_LIFE_KEYS) delete out[k];
+  return out;
+}
+
 /**
  * Loads the world reference for a book, filtered to what's safe to show a
- * given reader given their frontier (max chunk ever reached). If no
- * analysis has completed yet, returns `{status: 'none'}` (plus a `job` if
- * one is currently queued/running).
+ * given reader given their frontier (max chunk ever reached). Frontier
+ * filtering is the DEFAULT; pass `useFrontier: false` only for an owner/admin
+ * full-view (never from the client). If no analysis has completed yet,
+ * returns `{status: 'none'}` (plus a `job` if one is currently queued/running).
  */
 export async function getWorldForReader(opts: {
   bookId: string;
@@ -127,7 +151,7 @@ export async function getWorldForReader(opts: {
     visualStyle: world.visualStyle,
     themeArchetype: book?.themeArchetype ?? "classic",
     timeline: filteredTimeline,
-    entities: visibleEntities.map(toEntityDto),
+    entities: visibleEntities.map((e) => toEntityDto(e, frontierChunk)),
     counts: { total: entityRows.length, visible: visibleEntities.length },
   };
 }
@@ -167,12 +191,15 @@ export async function resetAndEnqueueAnalysis(bookId: string, userId: string) {
   return job;
 }
 
-function toEntityDto(e: typeof entities.$inferSelect): WorldEntityDto {
+function toEntityDto(
+  e: typeof entities.$inferSelect,
+  frontierChunk: number | null,
+): WorldEntityDto {
   return {
     id: e.id,
     name: e.name,
     kind: e.kind,
-    attributes: e.attributes,
+    attributes: reduceAttributes(e.attributes, e.introducedAtChunk, frontierChunk),
     visualDescription: e.visualDescription,
     introducedAtChunk: e.introducedAtChunk,
   };

@@ -317,6 +317,17 @@ export async function updateProgress(
 ) {
   await dbReady;
 
+  // Clamp to the book's real length: an unbounded client-supplied position
+  // could otherwise push the spoiler frontier to "finished" and unlock every
+  // reveal. frontierChunk is derived from this clamped value, never trusted raw.
+  const [bookRow] = await db
+    .select({ totalChunks: books.totalChunks })
+    .from(books)
+    .where(eq(books.id, bookId))
+    .limit(1);
+  const maxChunk = Math.max(0, (bookRow?.totalChunks ?? 1) - 1);
+  currentChunk = Math.min(Math.max(0, currentChunk), maxChunk);
+
   const [row] = await db
     .insert(readingProgress)
     .values({ userId, bookId, currentChunk, frontierChunk: currentChunk })

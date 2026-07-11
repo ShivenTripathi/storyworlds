@@ -1,5 +1,17 @@
 import { extractText, getDocumentProxy } from "unpdf";
 
+// A single PDF within the 50MB upload cap can still hold tens of thousands of
+// pages; each becomes a chunk row (+ image-pipeline work). Cap it so a
+// pathological file can't exhaust DB writes / the analysis pipeline.
+const MAX_PAGES = 5000;
+
+export class PdfTooLargeError extends Error {
+  constructor(public readonly totalPages: number) {
+    super(`PDF has ${totalPages} pages; the limit is ${MAX_PAGES}.`);
+    this.name = "PdfTooLargeError";
+  }
+}
+
 export interface PdfPage {
   pageNum: number; // 1-based
   text: string;
@@ -32,6 +44,9 @@ function countWords(text: string): number {
  */
 export async function extractPdf(data: Uint8Array): Promise<PdfExtractResult> {
   const pdf = await getDocumentProxy(data);
+  if (pdf.numPages > MAX_PAGES) {
+    throw new PdfTooLargeError(pdf.numPages);
+  }
   const { totalPages, text } = await extractText(pdf, { mergePages: false });
 
   const pages: PdfPage[] = text.map((raw, i) => {
