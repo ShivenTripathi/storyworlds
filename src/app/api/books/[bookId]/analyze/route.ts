@@ -38,8 +38,22 @@ export async function POST(req: Request, { params }: Params) {
       )
       .limit(1);
 
+    // Only treat an in-flight job as blocking if it's actually making progress.
+    // A dropped Inngest event (e.g. an unsynced deployment) can leave a job
+    // "queued" forever; without this staleness check the book would be
+    // permanently un-analyzable. Stale jobs are marked failed and a fresh run
+    // is enqueued below.
     if (existingJob) {
-      return NextResponse.json({ job: existingJob }, { status: 200 });
+      const updatedAt = existingJob.updatedAt ?? existingJob.createdAt;
+      const ageMs = Date.now() - new Date(updatedAt).getTime();
+      const staleMs = existingJob.status === "queued" ? 90_000 : 15 * 60_000;
+      if (ageMs < staleMs) {
+        return NextResponse.json({ job: existingJob }, { status: 200 });
+      }
+      await db
+        .update(jobs)
+        .set({ status: "failed", error: "Timed out; superseded by a new run." })
+        .where(eq(jobs.id, existingJob.id));
     }
 
     const [world] = await db
