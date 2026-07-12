@@ -5,6 +5,7 @@ import Link from "next/link";
 import { CATALOG_SEED } from "@/catalog/gutenberg";
 import type { Archetype } from "@/theme/archetypes";
 import { AdminBooksTable } from "./AdminBooksTable";
+import { AdminQueue } from "./AdminQueue";
 import { AdminMetrics } from "@/components/analytics/AdminMetrics";
 import type { AdminOverview } from "./types";
 
@@ -135,6 +136,8 @@ export function AdminClient() {
           Reader mail / Feedback →
         </Link>
       </div>
+
+      <AdminQueue />
 
       <div className="mb-10 grid grid-cols-2 gap-4 sm:grid-cols-4">
         <StatBlock label="Books" value={totals.books.toLocaleString()} />

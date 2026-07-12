@@ -73,3 +73,41 @@ export interface FeedbackListResponse {
     bySentiment: { up: number; down: number; none: number };
   };
 }
+
+/**
+ * Wire shapes for /api/admin/queue, mirroring src/services/queue.ts's
+ * QueueStatusDto without importing it (see the file-level comment above).
+ */
+export interface QueueProcessingItem {
+  jobId: string;
+  bookId: string;
+  title: string;
+  stage: string | null;
+  progress: number;
+  startedAt: string;
+}
+
+export interface QueueFailureItem {
+  jobId: string;
+  bookId: string;
+  title: string;
+  error: string | null;
+  failedAt: string;
+  attempts: number;
+  willAutoRetry: boolean;
+  cooldownEndsAt: string | null;
+}
+
+export interface QueueStatusDto {
+  processing: QueueProcessingItem[];
+  analysisBacklog: { pending: number; running: number; failed: number };
+  analysis: { analyzed: number; totalReady: number };
+  illustrations: {
+    readyPages: number;
+    totalPages: number;
+    booksWithBacklog: number;
+  };
+  freeTier: { requestsToday: number; dailyLimit: number; headroomPct: number };
+  recentFailures: QueueFailureItem[];
+  generatedAt: string;
+}

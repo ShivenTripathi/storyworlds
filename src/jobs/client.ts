@@ -23,3 +23,22 @@ export interface OverlayPrefetchRequestedEvent {
     count: number;
   };
 }
+
+/**
+ * Manual trigger for the always-on analysis sweeper (src/jobs/sweep-
+ * analysis.ts) — the cron tick is what normally drives it; this lets an
+ * admin action (or a test) force an immediate tick.
+ */
+export interface AnalysisSweepRequestedEvent {
+  name: "analysis/sweep.requested";
+  data: Record<string, never>;
+}
+
+/**
+ * Manual trigger for the always-on illustration sweeper (src/jobs/sweep-
+ * overlays.ts) — see AnalysisSweepRequestedEvent above.
+ */
+export interface OverlaySweepRequestedEvent {
+  name: "overlay/sweep.requested";
+  data: Record<string, never>;
+}
