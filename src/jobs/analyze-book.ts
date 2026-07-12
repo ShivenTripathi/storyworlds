@@ -111,13 +111,16 @@ function buildNotesDigest(results: SegmentAnalysis[]): string {
           .slice(0, 10)
           .map(
             (e) =>
-              `- ${e.name} (${e.kind}${e.aliases.length ? `, aka ${e.aliases.join(", ")}` : ""}): ${e.description}`,
+              `- ${e.name} (${e.kind}${e.aliases.length ? `, aka ${e.aliases.join(", ")}` : ""})${e.firstSeenPage != null ? ` [first seen p.${e.firstSeenPage}]` : ""}: ${e.description}`,
           )
           .join("\n") || "(none)";
       const eventLines =
         r.events
           .slice(0, 5)
-          .map((ev) => `- ${ev.summary}`)
+          .map(
+            (ev) =>
+              `- ${ev.summary}${ev.page != null ? ` [p.${ev.page}]` : ""}`,
+          )
           .join("\n") || "(none)";
       return `--- PART ${i + 1} ---\nEntities:\n${entityLines}\nEvents:\n${eventLines}\nSetting notes: ${r.settingNotes ?? "(none)"}`;
     })

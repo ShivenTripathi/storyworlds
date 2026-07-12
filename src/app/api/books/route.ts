@@ -17,6 +17,9 @@ import {
 import { checkEntitlement } from "@/services/entitlements";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+// Zip-bomb guard for the gzipped upload path — a hair above the largest
+// legitimate extracted payload (MAX_CHUNKS × MAX_PAGE_CHARS ≈ 160MB).
+const MAX_DECOMPRESSED_BYTES = 200 * 1024 * 1024;
 
 const metaSchema = z.object({
   title: z.string().trim().min(1).max(300).optional(),
@@ -91,9 +94,14 @@ export async function POST(req: NextRequest) {
       try {
         payload = isGzipped
           ? JSON.parse(
-              gunzipSync(Buffer.from(await req.arrayBuffer())).toString(
-                "utf-8",
-              ),
+              // Cap decompression: the largest legitimate payload is
+              // MAX_CHUNKS * MAX_PAGE_CHARS (~160MB); a tight ceiling above
+              // that makes gunzipSync throw RangeError on a zip bomb (a tiny
+              // gzip inflating to gigabytes) instead of OOM-killing the
+              // single-instance serverless function.
+              gunzipSync(Buffer.from(await req.arrayBuffer()), {
+                maxOutputLength: MAX_DECOMPRESSED_BYTES,
+              }).toString("utf-8"),
             )
           : await req.json();
       } catch {

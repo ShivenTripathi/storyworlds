@@ -35,13 +35,19 @@ segment-by-segment). Synthesize these into ONE cohesive world reference.
      or anything the text hasn't shown by the point they're introduced.
      attributes.role stays a short one-line tag (e.g. "the Duke's heir");
      description is the paragraph that brings them to life.
-   - Keep introducedAtPage as the EARLIEST page across all segments where this
-     entity (under any of its name variants) appeared.
+   - ALWAYS set introducedAtPage. The notes tag each entity's first sighting
+     as "[first seen p.N]" — use the EARLIEST such page across all of the
+     entity's name variants. This page is REQUIRED: it drives the spoiler gate
+     that decides when a reader is allowed to see this character, so an
+     entity with no page is HIDDEN from readers. If no "[first seen p.N]" tag
+     is present, infer the earliest page from the part it first appears in.
 
 2. CONSTRUCT A TIMELINE:
    - Produce timeline entries ordered chronologically across the whole book,
-     each with a short label, a one/two-sentence summary, and the approximate
-     page it occurs at (if determinable from the segment notes).
+     each with a short label, a one/two-sentence summary, and approxPage — the
+     page it occurs at. The notes tag events as "[p.N]"; use that. approxPage
+     is REQUIRED for the spoiler gate — an event with no page is hidden, so
+     always provide your best estimate rather than omitting it.
 
 3. IDENTIFY COMMITMENTS AND UNKNOWNS:
    - Commitments: things the narrative has firmly established as true (facts,
