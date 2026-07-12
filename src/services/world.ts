@@ -10,6 +10,7 @@ import {
   readingProgress,
   worldReferences,
 } from "@/db/schema";
+import { pageToChunkIdx } from "@/domain/schemas";
 import { inngest } from "@/jobs/client";
 import { storage } from "@/services/storage";
 
@@ -41,8 +42,10 @@ export interface WorldDto {
 }
 
 interface TimelineItem {
-  chunk?: number | null;
-  page?: number | null;
+  // Synthesis emits a 1-based `approxPage` (see TimelineEntrySchema). Older
+  // rows may lack it; either way an entry whose position we can't determine is
+  // treated as a spoiler and hidden (fail closed).
+  approxPage?: number | null;
   [key: string]: unknown;
 }
 
@@ -142,9 +145,13 @@ export async function getWorldForReader(opts: {
     .where(eq(entities.bookId, opts.bookId));
 
   const visibleEntities = entityRows.filter((e) => {
-    if (frontierChunk === null) return true;
+    if (frontierChunk === null) return true; // owner/admin: unfiltered
+    // Fail CLOSED: an entity whose introduction point is unknown is a
+    // potential spoiler (e.g. a late-appearing character the pipeline
+    // couldn't place), so it's hidden from a frontier-limited reader rather
+    // than leaked. Spoiler safety is a hard invariant (see CLAUDE.md).
     if (e.introducedAtChunk === null || e.introducedAtChunk === undefined)
-      return true;
+      return false;
     return e.introducedAtChunk <= frontierChunk;
   });
 
@@ -155,9 +162,14 @@ export async function getWorldForReader(opts: {
     frontierChunk === null
       ? timeline
       : timeline.filter((item) => {
-          const chunk = item.chunk;
-          if (typeof chunk !== "number") return true;
-          return chunk <= frontierChunk;
+          // Entries carry a 1-based `approxPage`; convert to the 0-based chunk
+          // index the frontier is measured in. Fail CLOSED when the page is
+          // missing — a whole-book chronological timeline is pure spoiler if
+          // it leaks ahead of the reader.
+          const page =
+            typeof item.approxPage === "number" ? item.approxPage : null;
+          if (page === null) return false;
+          return pageToChunkIdx(page) <= frontierChunk;
         });
 
   return {

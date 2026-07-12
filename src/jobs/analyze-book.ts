@@ -1,11 +1,28 @@
 import { asc, eq } from "drizzle-orm";
 import { completeJson } from "@/ai/client";
-import { buildSegmentPrompt, SEGMENT_SYSTEM_PROMPT } from "@/ai/prompts/segment";
-import { buildSynthesisPrompt, SYNTHESIS_SYSTEM_PROMPT } from "@/ai/prompts/synthesis";
+import {
+  buildSegmentPrompt,
+  SEGMENT_SYSTEM_PROMPT,
+} from "@/ai/prompts/segment";
+import {
+  buildSynthesisPrompt,
+  SYNTHESIS_SYSTEM_PROMPT,
+} from "@/ai/prompts/synthesis";
 import { db, dbReady } from "@/db";
-import { books, chunks, entities, entityAliases, jobs, worldReferences } from "@/db/schema";
+import {
+  books,
+  chunks,
+  entities,
+  entityAliases,
+  jobs,
+  worldReferences,
+} from "@/db/schema";
 import { derivedAliases, normalizeAlias } from "@/domain/entities/resolve";
-import { dedupeSlug, slugifyEntity, type EntityKind } from "@/domain/entities/slug";
+import {
+  dedupeSlug,
+  slugifyEntity,
+  type EntityKind,
+} from "@/domain/entities/slug";
 import {
   pageToChunkIdx,
   SegmentAnalysisSchema,
@@ -31,7 +48,10 @@ const defaultStepRunner: StepRunner = (_name, fn) => fn();
 const MAX_STORED_STRING = 500;
 const SEGMENT_CONCURRENCY = 3;
 
-function truncate(s: string | undefined, max = MAX_STORED_STRING): string | undefined {
+function truncate(
+  s: string | undefined,
+  max = MAX_STORED_STRING,
+): string | undefined {
   if (!s) return s;
   return s.length > max ? s.slice(0, max) : s;
 }
@@ -45,12 +65,18 @@ function truncateSegmentAnalysis(result: SegmentAnalysis): SegmentAnalysis {
       description: truncate(e.description) ?? "",
       visualDescription: truncate(e.visualDescription),
     })),
-    events: result.events.map((ev) => ({ ...ev, summary: truncate(ev.summary) ?? "" })),
+    events: result.events.map((ev) => ({
+      ...ev,
+      summary: truncate(ev.summary) ?? "",
+    })),
     settingNotes: truncate(result.settingNotes),
   };
 }
 
-async function updateJob(jobId: string, patch: Partial<typeof jobs.$inferInsert>) {
+async function updateJob(
+  jobId: string,
+  patch: Partial<typeof jobs.$inferInsert>,
+) {
   await dbReady;
   await db
     .update(jobs)
@@ -87,7 +113,11 @@ function buildNotesDigest(results: SegmentAnalysis[]): string {
               `- ${e.name} (${e.kind}${e.aliases.length ? `, aka ${e.aliases.join(", ")}` : ""}): ${e.description}`,
           )
           .join("\n") || "(none)";
-      const eventLines = r.events.slice(0, 5).map((ev) => `- ${ev.summary}`).join("\n") || "(none)";
+      const eventLines =
+        r.events
+          .slice(0, 5)
+          .map((ev) => `- ${ev.summary}`)
+          .join("\n") || "(none)";
       return `--- PART ${i + 1} ---\nEntities:\n${entityLines}\nEvents:\n${eventLines}\nSetting notes: ${r.settingNotes ?? "(none)"}`;
     })
     .join("\n\n");
@@ -116,7 +146,9 @@ async function persistWorld(
         name: e.name,
         kind: e.kind,
         introducedAtChunk:
-          e.introducedAtPage !== undefined ? pageToChunkIdx(e.introducedAtPage) : null,
+          e.introducedAtPage !== undefined
+            ? pageToChunkIdx(e.introducedAtPage)
+            : null,
         attributes: e.attributes,
         visualDescription: e.visualDescription ?? null,
       })),
@@ -126,7 +158,8 @@ async function persistWorld(
   // Alias table: normalize every name variant + derived alias; first entity
   // to claim a normalized alias wins, collisions are logged and skipped.
   const claimedAliases = new Set<string>();
-  const aliasRows: { bookId: string; aliasNorm: string; entityId: string }[] = [];
+  const aliasRows: { bookId: string; aliasNorm: string; entityId: string }[] =
+    [];
   synthesis.entities.forEach((e, i) => {
     const entityId = mintedIds[i];
     const candidates = [e.name, ...e.aliases, ...derivedAliases(e.name)];
@@ -148,7 +181,10 @@ async function persistWorld(
     await db.insert(entityAliases).values(aliasRows);
   }
 
-  const modelVersions = { segment: env.MODEL_SEGMENT, synthesis: env.MODEL_SYNTHESIS };
+  const modelVersions = {
+    segment: env.MODEL_SEGMENT,
+    synthesis: env.MODEL_SYNTHESIS,
+  };
   const worldValues = {
     status: "completed" as const,
     settingDescription: synthesis.settingDescription,
@@ -170,7 +206,10 @@ async function persistWorld(
 
   await db
     .update(books)
-    .set({ themeArchetype: synthesis.visualStyle.themeArchetype, updatedAt: new Date() })
+    .set({
+      themeArchetype: synthesis.visualStyle.themeArchetype,
+      updatedAt: new Date(),
+    })
     .where(eq(books.id, bookId));
 }
 
@@ -187,46 +226,69 @@ export async function runAnalysis(
 ): Promise<void> {
   await dbReady;
 
-  const { segments, bookTitle, totalChunks } = await stepRunner("load", async () => {
-    const [bookRow] = await db.select().from(books).where(eq(books.id, bookId)).limit(1);
-    if (!bookRow) throw new Error("Book not found");
+  const { segments, bookTitle, totalChunks } = await stepRunner(
+    "load",
+    async () => {
+      const [bookRow] = await db
+        .select()
+        .from(books)
+        .where(eq(books.id, bookId))
+        .limit(1);
+      if (!bookRow) throw new Error("Book not found");
 
-    const chunkRows = await db
-      .select({ idx: chunks.idx, text: chunks.text })
-      .from(chunks)
-      .where(eq(chunks.bookId, bookId))
-      .orderBy(asc(chunks.idx));
+      const chunkRows = await db
+        .select({ idx: chunks.idx, text: chunks.text })
+        .from(chunks)
+        .where(eq(chunks.bookId, bookId))
+        .orderBy(asc(chunks.idx));
 
-    const segs = segmentChunks(chunkRows);
+      const segs = segmentChunks(chunkRows);
 
-    await updateJob(jobId, { status: "running", stage: "Reading the manuscript…", progress: 5 });
+      await updateJob(jobId, {
+        status: "running",
+        stage: "Reading the manuscript…",
+        progress: 5,
+      });
 
-    return { segments: segs, bookTitle: bookRow.title, totalChunks: chunkRows.length };
-  });
+      return {
+        segments: segs,
+        bookTitle: bookRow.title,
+        totalChunks: chunkRows.length,
+      };
+    },
+  );
 
   const total = segments.length;
   const segmentResults: SegmentAnalysis[] = new Array(total);
   let done = 0;
 
-  await runWithConcurrency(segments, SEGMENT_CONCURRENCY, async (segment, i) => {
-    const result = await stepRunner(`segment-${i}`, async () => {
-      const analysis = await completeJson({
-        operation: "segment",
-        system: SEGMENT_SYSTEM_PROMPT,
-        prompt: buildSegmentPrompt({ index: segment.index, totalSegments: total, text: segment.text }),
-        schema: SegmentAnalysisSchema,
-        bookId,
+  await runWithConcurrency(
+    segments,
+    SEGMENT_CONCURRENCY,
+    async (segment, i) => {
+      const result = await stepRunner(`segment-${i}`, async () => {
+        const analysis = await completeJson({
+          operation: "segment",
+          system: SEGMENT_SYSTEM_PROMPT,
+          prompt: buildSegmentPrompt({
+            index: segment.index,
+            totalSegments: total,
+            text: segment.text,
+          }),
+          schema: SegmentAnalysisSchema,
+          bookId,
+        });
+        return truncateSegmentAnalysis(analysis);
       });
-      return truncateSegmentAnalysis(analysis);
-    });
 
-    segmentResults[i] = result;
-    done += 1;
-    await updateJob(jobId, {
-      progress: 5 + Math.round(60 * (done / total)),
-      stage: `Meeting the characters… (${done}/${total})`,
-    });
-  });
+      segmentResults[i] = result;
+      done += 1;
+      await updateJob(jobId, {
+        progress: 5 + Math.round(60 * (done / total)),
+        stage: `Meeting the characters… (${done}/${total})`,
+      });
+    },
+  );
 
   await updateJob(jobId, { stage: "Weaving the world…", progress: 70 });
 
@@ -235,7 +297,11 @@ export async function runAnalysis(
     completeJson({
       operation: "synthesis",
       system: SYNTHESIS_SYSTEM_PROMPT,
-      prompt: buildSynthesisPrompt({ bookTitle, totalSegments: total, notesDigest }),
+      prompt: buildSynthesisPrompt({
+        bookTitle,
+        totalSegments: total,
+        notesDigest,
+      }),
       schema: WorldSynthesisSchema,
       bookId,
     }),
@@ -243,7 +309,11 @@ export async function runAnalysis(
 
   await stepRunner("persist", async () => {
     await persistWorld(bookId, synthesis, segmentResults);
-    await updateJob(jobId, { progress: 90, status: "running", stage: "The world is ready." });
+    await updateJob(jobId, {
+      progress: 90,
+      status: "running",
+      stage: "The world is ready.",
+    });
   });
 
   // Warm-start: pre-generate overlays (illustration + companion notes) for
@@ -271,7 +341,11 @@ export async function runAnalysis(
     });
   }
 
-  await updateJob(jobId, { progress: 100, status: "completed", stage: "The world is ready." });
+  await updateJob(jobId, {
+    progress: 100,
+    status: "completed",
+    stage: "The world is ready.",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -281,18 +355,29 @@ export async function runAnalysis(
 export const analyzeBook = inngest.createFunction(
   {
     id: "analyze-book",
-    concurrency: 3,
+    // ZERO-COST CONSTRAINT (see CLAUDE.md): keep total concurrent Gemini calls
+    // ≤3 on the free tier. Each analyze run fans out to SEGMENT_CONCURRENCY (3)
+    // parallel segment calls, so the function itself must run ONE book at a
+    // time — concurrency:3 here meant 3×3 = 9 concurrent calls and blew the
+    // free-tier ceiling (→ 429s).
+    concurrency: 1,
     triggers: [{ event: "book/analyze.requested" }],
     onFailure: async ({ event }) => {
-      const jobId = (event.data as { event?: { data?: { jobId?: string } } }).event?.data?.jobId;
+      const jobId = (event.data as { event?: { data?: { jobId?: string } } })
+        .event?.data?.jobId;
       if (!jobId) return;
       try {
         await updateJob(jobId, {
           status: "failed",
-          error: "Analysis failed. Please try again or contact support if this persists.",
+          error:
+            "Analysis failed. Please try again or contact support if this persists.",
         });
       } catch (err) {
-        console.error("[analyze-book] failed to record failure on job", jobId, err);
+        console.error(
+          "[analyze-book] failed to record failure on job",
+          jobId,
+          err,
+        );
       }
     },
   },
