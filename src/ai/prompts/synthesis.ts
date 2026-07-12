@@ -27,6 +27,14 @@ segment-by-segment). Synthesize these into ONE cohesive world reference.
      motivation, scars) across all segments the entity appeared in, into one
      consistent picture. Do not contradict earlier segments; later segments
      may add detail.
+   - Write attributes.description as a fuller, 2-3 sentence introduction of
+     WHO THIS ENTITY IS — the kind of thing a character guide would print:
+     their bearing, station, and place in the story as they are FIRST
+     introduced. This is read by someone who hasn't met them yet, so it must
+     never reveal how their arc resolves, later betrayals/deaths/revelations,
+     or anything the text hasn't shown by the point they're introduced.
+     attributes.role stays a short one-line tag (e.g. "the Duke's heir");
+     description is the paragraph that brings them to life.
    - Keep introducedAtPage as the EARLIEST page across all segments where this
      entity (under any of its name variants) appeared.
 
@@ -48,6 +56,17 @@ segment-by-segment). Synthesize these into ONE cohesive world reference.
    - Choose ONE themeArchetype from this exact list (pick the closest match,
      even if imperfect):
 ${THEME_ARCHETYPE_LINES}
+
+5. WRITE A SPOILER-FREE BLURB:
+   - Write "blurb": a back-cover-style teaser, about 40-60 words, in the
+     voice of a book jacket — inviting a reader in, not briefing them on the
+     plot.
+   - This blurb is shown BEFORE anyone has read a single page (on the
+     Discover feed and the book's detail page), so it must contain ZERO
+     spoilers: no plot resolution, no twists, no reveals, no hint of how the
+     story ends or who wins/loses/dies/survives. Describe the premise, the
+     central character(s) and situation, and the tone/stakes they're facing
+     — stop there. When in doubt, describe LESS of the plot, not more.
 
 Rules:
 - NEVER invent an ID for an entity — identify entities by name and aliases only.

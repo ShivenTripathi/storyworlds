@@ -18,6 +18,9 @@ export type WorldStatus = "none" | "pending" | "completed" | "failed";
 export type EntityKind = "character" | "place" | "object" | "faction";
 
 export interface EntityAttributes {
+  /** A fuller 2-3 sentence introduction of who this entity is as
+   * introduced — not frontier-gated, unlike the inner-life fields below. */
+  description?: string;
   role?: string;
   internalState?: string;
   keyMotivation?: string;

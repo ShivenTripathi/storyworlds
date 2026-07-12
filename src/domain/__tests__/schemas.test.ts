@@ -27,7 +27,9 @@ describe("SegmentAnalysisSchema", () => {
 
   it("applies default empty aliases", () => {
     const result = SegmentAnalysisSchema.parse({
-      entities: [{ name: "Chani", kind: "character", description: "A Fremen." }],
+      entities: [
+        { name: "Chani", kind: "character", description: "A Fremen." },
+      ],
       events: [],
     });
     expect(result.entities[0].aliases).toEqual([]);
@@ -64,6 +66,7 @@ describe("SegmentAnalysisSchema", () => {
 describe("WorldSynthesisSchema", () => {
   const validPayload = {
     settingDescription: "A desert world.",
+    blurb: "A young heir is thrust into a desert world of shifting loyalties.",
     visualStyle: {
       artStyle: "painterly",
       colorPalette: "ochre and rust",
@@ -101,7 +104,10 @@ describe("WorldSynthesisSchema", () => {
     expect(() =>
       WorldSynthesisSchema.parse({
         ...validPayload,
-        visualStyle: { ...validPayload.visualStyle, themeArchetype: "cyberpunk" },
+        visualStyle: {
+          ...validPayload.visualStyle,
+          themeArchetype: "cyberpunk",
+        },
       }),
     ).toThrow();
   });
@@ -109,6 +115,30 @@ describe("WorldSynthesisSchema", () => {
   it("rejects a missing settingDescription", () => {
     const { settingDescription: _dropped, ...rest } = validPayload;
     expect(() => WorldSynthesisSchema.parse(rest)).toThrow();
+  });
+
+  it("rejects a missing blurb", () => {
+    const { blurb: _dropped, ...rest } = validPayload;
+    expect(() => WorldSynthesisSchema.parse(rest)).toThrow();
+  });
+
+  it("accepts an optional entity attributes.description", () => {
+    const result = WorldSynthesisSchema.parse({
+      ...validPayload,
+      entities: [
+        {
+          ...validPayload.entities[0],
+          attributes: {
+            ...validPayload.entities[0].attributes,
+            description:
+              "Paul Atreides is introduced as the studious heir of House Atreides.",
+          },
+        },
+      ],
+    });
+    expect(result.entities[0].attributes.description).toBe(
+      "Paul Atreides is introduced as the studious heir of House Atreides.",
+    );
   });
 });
 

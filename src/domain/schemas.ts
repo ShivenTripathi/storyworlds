@@ -58,6 +58,12 @@ export const VisualStyleSchema = z.object({
 });
 
 export const WorldEntityAttributesSchema = z.object({
+  // A fuller, 2-3 sentence introduction of who this entity is AS INTRODUCED
+  // in the story so far — never their arc's resolution. Unlike
+  // internalState/keyMotivation/scars below, this is not frontier-gated (it
+  // reads like a character-guide entry, not a spoiler), so it renders
+  // immediately wherever the entity itself is visible.
+  description: z.string().optional(),
   role: z.string().optional(),
   internalState: z.string().optional(),
   keyMotivation: z.string().optional(),
@@ -91,6 +97,10 @@ export const UnknownSchema = z.object({
 
 export const WorldSynthesisSchema = z.object({
   settingDescription: z.string(),
+  // A spoiler-free back-cover teaser (~40-60 words) shown on Discover cards
+  // and the book-detail page BEFORE anyone has read a page — it must never
+  // reveal plot resolution, twists, or how the story ends.
+  blurb: z.string(),
   visualStyle: VisualStyleSchema,
   entities: z.array(WorldEntitySchema),
   timeline: z.array(TimelineEntrySchema).default([]),

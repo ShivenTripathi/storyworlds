@@ -10,6 +10,7 @@ import { RelationshipChips } from "@/components/dossier/RelationshipChips";
 import { fetchDossier } from "@/components/world/api";
 import { ProgressChip } from "@/components/world/ProgressChip";
 import type { DossierData } from "@/components/world/types";
+import { assembleBio } from "@/domain/bio";
 
 type LoadState = "loading" | "ready" | "not-found" | "error";
 
@@ -183,14 +184,23 @@ export default function CharacterDossierPage({
 
         {/* ── Prose, appearances, relationships ───────────────────────── */}
         <main className="space-y-10">
-          {attributes?.role ? (
-            <section>
-              <SectionLabel>WHO THEY ARE</SectionLabel>
-              <p className="font-reading text-base leading-relaxed">
-                {attributes.role}
-              </p>
-            </section>
-          ) : null}
+          {(() => {
+            // A flowing bio, not disconnected attribute fragments: the fuller
+            // introduction (attributes.description) leads, with the short
+            // role tag folded in as a closing line. Neither field is
+            // frontier-gated — they describe the entity as introduced, never
+            // their arc's end (see WorldEntityAttributesSchema).
+            const bio = assembleBio([
+              attributes?.description,
+              attributes?.role,
+            ]);
+            return bio ? (
+              <section>
+                <SectionLabel>WHO THEY ARE</SectionLabel>
+                <p className="font-reading text-base leading-relaxed">{bio}</p>
+              </section>
+            ) : null;
+          })()}
 
           <InnerLifeSection
             attributes={attributes}
@@ -272,7 +282,7 @@ export default function CharacterDossierPage({
 }
 
 /**
- * The inner life: revealed field-by-field once the reader has earned it, or a
+ * The inner life: a flowing paragraph once the reader has earned it, or a
  * sealed affordance (never the content itself) while the frontier still hides
  * it. Renders nothing when the character simply has no inner-life data.
  */
@@ -285,13 +295,19 @@ function InnerLifeSection({
   gated: boolean;
   name: string;
 }) {
-  const rows = [
-    { label: "INTERNAL STATE", value: attributes?.internalState },
-    { label: "KEY MOTIVATION", value: attributes?.keyMotivation },
-    { label: "SCARS", value: attributes?.scars },
-  ].filter((r) => r.value);
+  // Revealed inner-life fragments read as one flowing paragraph rather than
+  // a bulleted ledger — still exactly the same fields, in the same order,
+  // that reduceAttributes (src/services/world.ts) already stripped out
+  // whenever the frontier hasn't earned them yet. `gated` and the content
+  // here always agree: reduceAttributes deletes these keys server-side
+  // until earned, so `bio` is only ever non-null when it's safe to show.
+  const bio = assembleBio([
+    attributes?.internalState,
+    attributes?.keyMotivation,
+    attributes?.scars,
+  ]);
 
-  if (rows.length === 0 && !gated) return null;
+  if (!bio && !gated) return null;
 
   return (
     <section>
@@ -319,14 +335,7 @@ function InnerLifeSection({
           </p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {rows.map((r) => (
-            <div key={r.label}>
-              <p className="eyebrow mb-1">{r.label}</p>
-              <p className="font-reading text-sm leading-relaxed">{r.value}</p>
-            </div>
-          ))}
-        </div>
+        <p className="font-reading text-sm leading-relaxed">{bio}</p>
       )}
     </section>
   );

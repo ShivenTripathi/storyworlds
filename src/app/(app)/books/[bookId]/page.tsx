@@ -205,6 +205,12 @@ export default function BookDetailPage({
             </p>
           ) : null}
 
+          {book.blurb ? (
+            <p className="mt-4 font-reading text-[15px] leading-relaxed text-foreground">
+              {book.blurb}
+            </p>
+          ) : null}
+
           <PricingBadge
             visibility={book.visibility}
             pricingTier={book.pricingTier}

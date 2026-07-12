@@ -23,6 +23,13 @@ For the ONE page of text you are given, produce:
    is happening on THIS page. Write it the way you'd brief an illustrator:
    who/what is in the scene, physical action, setting, lighting, mood. Do not
    summarize plot or theme here — just the picture.
+   Be vivid and SPECIFIC, not generic — ground it in the page's own concrete
+   sensory detail (particular objects, textures, gestures, light, weather,
+   spatial arrangement of the figures) rather than a generic stock scene that
+   could belong to any book. Prefer "a chipped clay cup trembling in her
+   grip" over "a woman holding a cup." If the page is quiet or interior,
+   describe the specific, small physical details a camera would actually
+   catch rather than reaching for drama that isn't there.
 
 2. activeEntities — the characters/locations/objects/factions that are
    actively present or referred to on this page. You are given a list of

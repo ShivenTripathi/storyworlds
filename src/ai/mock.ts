@@ -79,9 +79,8 @@ function extractCharacterName(system: string): string {
  * without a real model. */
 function buildMockChatReply(system: string, prompt: string): string {
   const name = extractCharacterName(system);
-  const isFutureQuestion = /\b(happen|will|future|end up|fate|later|eventually)\b/i.test(
-    prompt,
-  );
+  const isFutureQuestion =
+    /\b(happen|will|future|end up|fate|later|eventually)\b/i.test(prompt);
   if (isFutureQuestion) {
     return `${name} looks away for a moment, uncertain. "I couldn't tell you what's still ahead of me — I only know what I've lived through so far."`;
   }
@@ -122,7 +121,10 @@ export class MockDriver {
   }
 }
 
-function buildMockOutput(operation: MockDriverRunOpts["operation"], prompt: string): unknown {
+function buildMockOutput(
+  operation: MockDriverRunOpts["operation"],
+  prompt: string,
+): unknown {
   switch (operation) {
     case "segment":
       return buildMockSegment(prompt);
@@ -179,7 +181,8 @@ function buildMockOverlay(prompt: string) {
   const entityNames = extractEntityListNames(prompt, 3);
 
   return {
-    sceneDescription: pageText.slice(0, 200).trim() || "A quiet moment on the page (mock).",
+    sceneDescription:
+      pageText.slice(0, 200).trim() || "A quiet moment on the page (mock).",
     activeEntities: entityNames.map((name) => ({ name })),
     mood: "contemplative",
     interpretiveNotes: "A mock interpretive note for this page.",
@@ -196,6 +199,10 @@ function buildMockSynthesis(prompt: string) {
 
   return {
     settingDescription: "A world synthesized from mock analysis notes.",
+    blurb:
+      "A world is taking shape on the page — a cast of strangers, a setting " +
+      "still coming into focus, and a story that hasn't shown its hand yet. " +
+      "Step in and meet them as they're introduced (mock blurb).",
     visualStyle: {
       artStyle: "engraved illustration",
       colorPalette: "warm amber",
@@ -208,6 +215,7 @@ function buildMockSynthesis(prompt: string) {
       kind: "character" as const,
       aliases: [name],
       attributes: {
+        description: `${name} is introduced early in the story, already carrying the traits that will come to define them (mock).`,
         role: "unknown",
         internalState: undefined,
         keyMotivation: undefined,
@@ -218,10 +226,21 @@ function buildMockSynthesis(prompt: string) {
     })),
     timeline: [
       { label: "Beginning", summary: "The story begins.", approxPage: 1 },
-      { label: "Middle", summary: "The story develops.", approxPage: undefined },
+      {
+        label: "Middle",
+        summary: "The story develops.",
+        approxPage: undefined,
+      },
       { label: "End", summary: "The story concludes.", approxPage: undefined },
     ],
-    commitments: [{ claim: "A fact established early in the book.", status: "open" as const }],
-    unknowns: [{ question: "An open question raised by the book.", kind: "mystery" }],
+    commitments: [
+      {
+        claim: "A fact established early in the book.",
+        status: "open" as const,
+      },
+    ],
+    unknowns: [
+      { question: "An open question raised by the book.", kind: "mystery" },
+    ],
   };
 }

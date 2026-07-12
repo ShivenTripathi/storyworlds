@@ -146,6 +146,12 @@ function DiscoverCard({
         ) : null}
       </div>
 
+      {book.blurb ? (
+        <p className="mt-1.5 line-clamp-3 font-reading text-xs leading-relaxed text-muted-foreground">
+          {book.blurb}
+        </p>
+      ) : null}
+
       <p className="mt-1 font-ui text-[11px] text-muted-foreground italic">
         World included
       </p>

@@ -406,6 +406,10 @@ export interface BookDto {
   pricingTier?: string | null;
   /** 'pdf' | 'epub' | 'txt' | null (catalog books / legacy rows with no stored source). */
   sourceFormat?: string | null;
+  /** Spoiler-free back-cover teaser — null until analysis has produced one
+   * (see WorldSynthesisSchema.blurb / src/jobs/analyze-book.ts persistWorld).
+   * Shown on Discover and the book-detail page, always BEFORE reading. */
+  blurb?: string | null;
   /** Set by listBooks: whether this book is on the shelf because the caller
    * owns it or because they've added a published book to their library. */
   source?: "owned" | "library";
@@ -431,6 +435,7 @@ export function toBookDto(
     themeArchetype?: string | null;
     pricingTier?: string | null;
     sourceFormat?: string | null;
+    blurb?: string | null;
   },
   progress?: {
     currentChunk: number | null;
@@ -451,6 +456,7 @@ export function toBookDto(
     themeArchetype: book.themeArchetype ?? null,
     pricingTier: book.pricingTier ?? null,
     sourceFormat: book.sourceFormat ?? null,
+    blurb: book.blurb ?? null,
   };
 
   if (source) {

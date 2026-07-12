@@ -27,6 +27,10 @@ export interface Book {
    * See CLAUDE.md "THE MODEL" — drives the upload dialog's pricing copy and
    * the Discover "contributed by a reader" badge. */
   pricingTier?: string | null;
+  /** Spoiler-free back-cover teaser, generated during analysis. Null until
+   * the book has been (re-)analyzed since blurb generation shipped — render
+   * nothing when absent, never a placeholder. */
+  blurb?: string | null;
   /** Present on /api/marketplace and /api/books responses: whether this
    * book is on the shelf because the caller owns it or added it from
    * Discover. */
