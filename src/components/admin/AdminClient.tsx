@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CATALOG_SEED } from "@/catalog/gutenberg";
 import type { Archetype } from "@/theme/archetypes";
 import { AdminBooksTable } from "./AdminBooksTable";
+import { AdminMetrics } from "@/components/analytics/AdminMetrics";
 import type { AdminOverview } from "./types";
 
 const POLL_MS = 30_000;
@@ -135,6 +136,8 @@ export function AdminClient() {
           value={totals.tokensToday.toLocaleString()}
         />
       </div>
+
+      <AdminMetrics className="mb-10" />
 
       <CatalogQueue books={books} />
 

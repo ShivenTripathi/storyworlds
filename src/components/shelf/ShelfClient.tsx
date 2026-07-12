@@ -6,6 +6,7 @@ import { TypographicCover } from "./TypographicCover";
 import { BookCard } from "./BookCard";
 import { UploadBook } from "./UploadBook";
 import { DiscoverGrid } from "./DiscoverGrid";
+import { ReaderDashboard } from "@/components/analytics/ReaderDashboard";
 import type { Book } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
@@ -85,12 +86,15 @@ export function ShelfClient() {
       </div>
 
       {tab === "shelf" ? (
-        <MyShelf
-          books={books}
-          loadState={loadState}
-          onUploaded={handleUploaded}
-          onDelete={handleDelete}
-        />
+        <>
+          {books.length > 0 ? <ReaderDashboard className="mb-12" /> : null}
+          <MyShelf
+            books={books}
+            loadState={loadState}
+            onUploaded={handleUploaded}
+            onDelete={handleDelete}
+          />
+        </>
       ) : (
         <DiscoverGrid />
       )}

@@ -31,6 +31,7 @@ import {
   rarityFromScore,
   type Rarity,
 } from "@/domain/codex";
+import { pageToChunkIdx } from "@/domain/schemas";
 import { storage } from "@/services/storage";
 
 function startOfUtcDay(d: Date): Date {
@@ -656,4 +657,326 @@ export async function getAdminMetrics(): Promise<AdminMetricsDto> {
       completionRatePct,
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// getStoryInsights — Tier 2 story-world insights (character network,
+// screen-time, and a frontier-filtered timeline spine) for one book
+// ---------------------------------------------------------------------------
+
+/** Shape of one `world_references.timeline` entry (see TimelineEntrySchema). */
+interface StoryTimelineItem {
+  label?: unknown;
+  summary?: unknown;
+  approxPage?: number | null;
+  [key: string]: unknown;
+}
+
+export interface StoryInsightNode {
+  id: string;
+  name: string;
+  kind: string;
+  /** Overlays (pages), within the reader's frontier, this entity is active on. */
+  pageCount: number;
+}
+
+export interface StoryInsightEdge {
+  source: string;
+  target: string;
+  /** Number of pages the two entities share a scene on. */
+  weight: number;
+}
+
+export interface StoryInsightTimelineEntry {
+  label: string;
+  summary: string;
+  /** 1-based page, as emitted by synthesis; null only in an owner/admin full
+   * view for a legacy entry that never got one. */
+  approxPage: number | null;
+}
+
+export interface StoryInsightsDto {
+  /** 'completed' | 'none' | 'pending' | 'failed' — mirrors world_references.status. */
+  status: string;
+  network: { nodes: StoryInsightNode[]; edges: StoryInsightEdge[] };
+  /** Same nodes as `network.nodes`, ranked by pageCount desc — ready for a bar list. */
+  screenTime: StoryInsightNode[];
+  timeline: {
+    /** Frontier-filtered entries only — never anything ahead of the reader. */
+    entries: StoryInsightTimelineEntry[];
+    /** Total events across the whole book's timeline. A count is safe to
+     * reveal on its own; the entries' content is what's gated. */
+    totalCount: number;
+    /** totalCount - entries.length — entries hidden because they're ahead of
+     * the frontier OR (fail closed) their position couldn't be determined.
+     * Drives an "N events ahead" unlabeled-tick affordance. */
+    hiddenAheadCount: number;
+    frontierChunk: number | null;
+    totalChunks: number | null;
+  };
+}
+
+export interface GetStoryInsightsOptions {
+  userId: string;
+  bookId: string;
+  /** Owner/admin full view: no frontier gate, every entity/timeline entry visible. */
+  isOwnerOrAdmin?: boolean;
+}
+
+function emptyStoryInsights(status: string): StoryInsightsDto {
+  return {
+    status,
+    network: { nodes: [], edges: [] },
+    screenTime: [],
+    timeline: {
+      entries: [],
+      totalCount: 0,
+      hiddenAheadCount: 0,
+      frontierChunk: null,
+      totalChunks: null,
+    },
+  };
+}
+
+/**
+ * Tier-2 story-world insights for one book (docs/analytics-plan.md): a
+ * character co-occurrence network (edges from shared `overlays.
+ * activeEntityIds`), each entity's "screen time" (page count), and the world
+ * reference's timeline filtered to the reader's frontier.
+ *
+ * SPOILER SAFETY: uses the exact same fail-closed frontier gate as
+ * getCodexForBook/getWorldForReader. An entity whose `cardState` (src/domain/
+ * codex.ts) is 'locked' — ahead of the reader's frontier, or with an unknown
+ * introduction point — is dropped from the `revealed` set BEFORE any node or
+ * edge is built, so a locked entity's id, name, or co-occurrence can never
+ * leak through the network graph, even if that id appears in an
+ * already-read overlay's `activeEntityIds` (e.g. a co-occurring character
+ * whose OWN introduction point the pipeline never placed). The timeline
+ * reuses getWorldForReader's page->chunk conversion and fails closed on a
+ * missing `approxPage`; only a COUNT of hidden-ahead events is ever exposed,
+ * never their labels/summaries.
+ *
+ * Fixed number of queries regardless of book size: one world-reference
+ * lookup, one book lookup, one frontier lookup, one entity scan, one
+ * frontier-bounded overlay scan — never a query per entity or per overlay.
+ */
+export async function getStoryInsights(
+  opts: GetStoryInsightsOptions,
+): Promise<StoryInsightsDto> {
+  await dbReady;
+
+  const [world] = await db
+    .select({
+      status: worldReferences.status,
+      timeline: worldReferences.timeline,
+    })
+    .from(worldReferences)
+    .where(eq(worldReferences.bookId, opts.bookId))
+    .limit(1);
+
+  if (!world || world.status !== "completed") {
+    return emptyStoryInsights(world?.status ?? "none");
+  }
+
+  const [book] = await db
+    .select({ totalChunks: books.totalChunks })
+    .from(books)
+    .where(eq(books.id, opts.bookId))
+    .limit(1);
+  const totalChunks = book?.totalChunks ?? null;
+
+  let frontierChunk: number | null = null;
+  if (!opts.isOwnerOrAdmin) {
+    const [progress] = await db
+      .select({ frontierChunk: readingProgress.frontierChunk })
+      .from(readingProgress)
+      .where(
+        and(
+          eq(readingProgress.userId, opts.userId),
+          eq(readingProgress.bookId, opts.bookId),
+        ),
+      )
+      .limit(1);
+    frontierChunk = progress?.frontierChunk ?? 0;
+  }
+
+  const entityRows = await db
+    .select()
+    .from(entities)
+    .where(eq(entities.bookId, opts.bookId))
+    .orderBy(asc(entities.id));
+
+  // Locked entities never make it into `revealed` — the same fail-closed
+  // rule as the Codex. Everything downstream reads from this map only.
+  const revealed = new Map<string, { name: string; kind: string }>();
+  for (const e of entityRows) {
+    if (cardState(e.introducedAtChunk, frontierChunk) !== "locked") {
+      revealed.set(e.id, { name: e.name, kind: e.kind });
+    }
+  }
+
+  const overlayConds = [
+    eq(overlays.bookId, opts.bookId),
+    eq(overlays.status, "ready"),
+  ];
+  if (frontierChunk !== null) {
+    overlayConds.push(lte(overlays.chunkIdx, frontierChunk));
+  }
+  const overlayRows = await db
+    .select({ activeEntityIds: overlays.activeEntityIds })
+    .from(overlays)
+    .where(and(...overlayConds));
+
+  const pageCountByEntity = new Map<string, number>();
+  const edgeWeights = new Map<string, number>(); // key: "idA idB", idA < idB
+
+  for (const row of overlayRows) {
+    // Drop any id that isn't in `revealed` — a locked entity's id must never
+    // contribute a node or an edge, even from a page at/behind the frontier.
+    const ids = activeIdsOf(row).filter((id) => revealed.has(id));
+    for (const id of ids) {
+      pageCountByEntity.set(id, (pageCountByEntity.get(id) ?? 0) + 1);
+    }
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const [a, b] = ids[i] < ids[j] ? [ids[i], ids[j]] : [ids[j], ids[i]];
+        const key = `${a} ${b}`;
+        edgeWeights.set(key, (edgeWeights.get(key) ?? 0) + 1);
+      }
+    }
+  }
+
+  const nodes: StoryInsightNode[] = [...revealed.entries()].map(
+    ([id, { name, kind }]) => ({
+      id,
+      name,
+      kind,
+      pageCount: pageCountByEntity.get(id) ?? 0,
+    }),
+  );
+
+  const edges: StoryInsightEdge[] = [...edgeWeights.entries()].map(
+    ([key, weight]) => {
+      const [source, target] = key.split(" ");
+      return { source, target, weight };
+    },
+  );
+
+  const screenTime = [...nodes].sort((a, b) => b.pageCount - a.pageCount);
+
+  const rawTimeline = Array.isArray(world.timeline)
+    ? (world.timeline as StoryTimelineItem[])
+    : [];
+  const totalCount = rawTimeline.length;
+  const timelineEntries: StoryInsightTimelineEntry[] = [];
+  for (const item of rawTimeline) {
+    const page = typeof item.approxPage === "number" ? item.approxPage : null;
+    if (frontierChunk !== null) {
+      // Fail CLOSED: an unplaceable or ahead-of-frontier entry is a spoiler
+      // risk, exactly like getWorldForReader's timeline filter.
+      if (page === null || pageToChunkIdx(page) > frontierChunk) continue;
+    }
+    timelineEntries.push({
+      label: typeof item.label === "string" ? item.label : "",
+      summary: typeof item.summary === "string" ? item.summary : "",
+      approxPage: page,
+    });
+  }
+
+  return {
+    status: world.status ?? "completed",
+    network: { nodes, edges },
+    screenTime,
+    timeline: {
+      entries: timelineEntries,
+      totalCount,
+      hiddenAheadCount: Math.max(0, totalCount - timelineEntries.length),
+      frontierChunk,
+      totalChunks,
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// getCollectionOverview — per-book completion, for the shelf cross-view
+// ---------------------------------------------------------------------------
+
+export interface CollectionOverviewItem {
+  bookId: string;
+  title: string;
+  themeArchetype: string | null;
+  castMet: number;
+  castTotal: number;
+  /** min(frontierChunk+1, totalChunks) / totalChunks, as a whole percent. */
+  progressPercent: number;
+}
+
+export type CollectionOverviewDto = CollectionOverviewItem[];
+
+/**
+ * Per-book completion for every book the caller has opened (has a
+ * `readingProgress` row) — the shelf's cross-book collection view: title,
+ * theme archetype, cast met/total (frontier-gated, same rule as
+ * getBookStats), and overall progress percent. Two fixed queries regardless
+ * of shelf size — no per-book fan-out loop.
+ */
+export async function getCollectionOverview(
+  userId: string,
+): Promise<CollectionOverviewDto> {
+  await dbReady;
+
+  const progressRows = await db
+    .select({
+      bookId: books.id,
+      title: books.title,
+      themeArchetype: books.themeArchetype,
+      totalChunks: books.totalChunks,
+      frontierChunk: readingProgress.frontierChunk,
+    })
+    .from(readingProgress)
+    .innerJoin(books, eq(books.id, readingProgress.bookId))
+    .where(eq(readingProgress.userId, userId));
+
+  if (progressRows.length === 0) return [];
+
+  const castRows = await db
+    .select({
+      bookId: entities.bookId,
+      total: sql<number>`count(*)::int`,
+      met: sql<number>`count(*) filter (
+        where ${entities.introducedAtChunk} is not null
+          and ${entities.introducedAtChunk} <= ${readingProgress.frontierChunk}
+      )::int`,
+    })
+    .from(entities)
+    .innerJoin(
+      readingProgress,
+      and(
+        eq(readingProgress.bookId, entities.bookId),
+        eq(readingProgress.userId, userId),
+      ),
+    )
+    .groupBy(entities.bookId);
+  const castByBook = new Map(castRows.map((r) => [r.bookId, r]));
+
+  return progressRows.map((row) => {
+    const totalChunks = row.totalChunks ?? 0;
+    const frontierChunk = row.frontierChunk ?? 0;
+    const pagesRead =
+      totalChunks > 0
+        ? Math.min(frontierChunk + 1, totalChunks)
+        : frontierChunk + 1;
+    const progressPercent =
+      totalChunks > 0 ? Math.round((pagesRead / totalChunks) * 100) : 0;
+    const cast = castByBook.get(row.bookId);
+
+    return {
+      bookId: row.bookId,
+      title: row.title,
+      themeArchetype: row.themeArchetype,
+      castMet: cast?.met ?? 0,
+      castTotal: cast?.total ?? 0,
+      progressPercent,
+    };
+  });
 }

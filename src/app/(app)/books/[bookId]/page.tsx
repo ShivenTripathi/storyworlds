@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { TypographicCover } from "@/components/shelf/TypographicCover";
 import type { Book, ApiErrorBody } from "@/components/shelf/types";
 import { WorldFormingCard } from "@/components/world/WorldFormingCard";
-import { CastList } from "@/components/world/CastList";
+import { BookCodex } from "@/components/codex/BookCodex";
+import { BookInsights } from "@/components/analytics/BookInsights";
+import { ShareButton } from "@/components/share/ShareButton";
 import { useJob } from "@/components/world/useJob";
 import { analyzeBook, fetchWorld } from "@/components/world/api";
 import type { World } from "@/components/world/types";
@@ -229,6 +231,15 @@ export default function BookDetailPage({
               {started ? "Continue reading" : "Begin reading"}
             </Link>
 
+            {book.visibility === "published" ? (
+              <ShareButton
+                kind="book"
+                bookId={book.id}
+                title={book.title}
+                author={book.author}
+              />
+            ) : null}
+
             {!confirmingRemove ? (
               <button
                 type="button"
@@ -271,6 +282,17 @@ export default function BookDetailPage({
           onAwaken={handleAwaken}
         />
       </div>
+
+      {world?.status === "completed" ? (
+        <>
+          <div className="mt-12">
+            <BookCodex bookId={book.id} />
+          </div>
+          <div className="mt-12">
+            <BookInsights bookId={book.id} />
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -385,12 +407,6 @@ function StoryWorldSection({
                   {value}
                 </span>
               ))}
-          </div>
-        ) : null}
-
-        {world.entities && world.entities.length > 0 ? (
-          <div className="mt-6">
-            <CastList entities={world.entities} counts={world.counts} />
           </div>
         ) : null}
       </div>
