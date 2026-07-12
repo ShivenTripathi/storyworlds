@@ -49,12 +49,18 @@ function cap(s: string, max: number): string {
   return s.length > max ? `${s.slice(0, max)}…` : s;
 }
 
-function formatAttributes(entity: PersonaEntity, attributes: PersonaAttributes): string {
+function formatAttributes(
+  entity: PersonaEntity,
+  attributes: PersonaAttributes,
+): string {
   const lines: string[] = [];
   if (attributes.role) lines.push(`Role: ${attributes.role}`);
-  if (entity.visualDescription) lines.push(`Appearance: ${entity.visualDescription}`);
-  if (attributes.internalState) lines.push(`Internal state: ${attributes.internalState}`);
-  if (attributes.keyMotivation) lines.push(`Motivation: ${attributes.keyMotivation}`);
+  if (entity.visualDescription)
+    lines.push(`Appearance: ${entity.visualDescription}`);
+  if (attributes.internalState)
+    lines.push(`Internal state: ${attributes.internalState}`);
+  if (attributes.keyMotivation)
+    lines.push(`Motivation: ${attributes.keyMotivation}`);
   if (attributes.scars) lines.push(`Scars: ${attributes.scars}`);
   return lines.length > 0 ? lines.join("\n") : "(no further detail known yet)";
 }
@@ -62,6 +68,17 @@ function formatAttributes(entity: PersonaEntity, attributes: PersonaAttributes):
 function formatTimeline(items: PersonaTimelineItem[]): string {
   if (items.length === 0) return "(nothing notable yet)";
   return items.map((t) => `- ${t.label}: ${t.summary}`).join("\n");
+}
+
+function formatRelevantEntities(items: RelevantPersonaEntity[]): string {
+  if (items.length === 0) return "";
+  const lines = items.map((e) => `- ${e.name}${e.role ? ` (${e.role})` : ""}`);
+  return `\n\nOthers relevant to this exchange:\n${lines.join("\n")}`;
+}
+
+export interface RelevantPersonaEntity {
+  name: string;
+  role?: string;
 }
 
 /**
@@ -73,13 +90,33 @@ function formatTimeline(items: PersonaTimelineItem[]): string {
 export function buildPersona(opts: {
   entity: PersonaEntity;
   mode: ChatMode;
-  knowledge: PersonaKnowledge;
+  attributes: PersonaAttributes;
+  /** The RELEVANT slice of the (already frontier-gated) timeline for this
+   * turn — selected by the caller's lookup step, NOT the whole timeline. */
+  timeline: PersonaTimelineItem[];
+  /** Other entities the reader's message referenced (name + role only). */
+  relevantEntities?: RelevantPersonaEntity[];
   currentPageText: string;
   settingDescription: string;
 }): string {
-  const { entity, mode, knowledge, currentPageText, settingDescription } = opts;
+  const {
+    entity,
+    mode,
+    attributes,
+    timeline,
+    relevantEntities = [],
+    currentPageText,
+    settingDescription,
+  } = opts;
 
-  const shared = `You are ${entity.name}. Stay strictly in character. Never break the fourth wall. Never mention being an AI.`;
+  // NOTE: keep the leading "You are {name}." sentence intact — the mock
+  // driver (src/ai/mock.ts extractCharacterName) parses the name from it.
+  const shared = `You are ${entity.name}. Stay strictly in character. Never break the fourth wall. Never mention being an AI.
+
+CONVERSATION STYLE:
+- You are having a conversation, not giving a speech. Answer the actual question that was asked — nothing more.
+- Match the reader's register and length: a short or casual question gets a short, natural reply; a searching question earns a fuller one. Keep replies to a few sentences unless genuinely asked to elaborate.
+- Reveal what you know gradually, the way a person does in conversation. Do NOT recite your backstory, motives, or whole situation unprompted. Never info-dump or monologue.`;
 
   const modeInstructions =
     mode === "story_so_far"
@@ -93,12 +130,12 @@ export function buildPersona(opts: {
 
   return `${shared}
 
-${formatAttributes(entity, knowledge.attributes)}
+${formatAttributes(entity, attributes)}
 
 World setting: ${cap(settingDescription, SETTING_DESCRIPTION_CAP)}
 
-What you know${mode === "story_so_far" ? " so far" : " (the whole story)"}:
-${formatTimeline(knowledge.visibleTimeline)}
+Relevant to what's being asked${mode === "story_so_far" ? " (only what you've lived so far)" : ""}:
+${formatTimeline(timeline)}${formatRelevantEntities(relevantEntities)}
 
 ${modeInstructions}
 
@@ -114,11 +151,21 @@ export interface ChatHistoryTurn {
 /**
  * Builds the USER:/CHARACTER: transcript + new message that goes in as the
  * `prompt` alongside the persona `system` prompt.
+ *
+ * `history` is only the recent verbatim window (bounded by the caller);
+ * `summaryNote`, if present, is a cheap breadcrumb of earlier turns that fell
+ * outside that window, so continuity survives without re-sending everything.
  */
-export function buildChatPrompt(opts: { history: ChatHistoryTurn[]; message: string }): string {
+export function buildChatPrompt(opts: {
+  history: ChatHistoryTurn[];
+  message: string;
+  summaryNote?: string;
+}): string {
   const transcript = opts.history
     .map((m) => `${m.role === "user" ? "USER" : "CHARACTER"}: ${m.content}`)
     .join("\n");
 
-  return `${transcript ? `${transcript}\n` : ""}USER: ${opts.message}\nCHARACTER:`;
+  const preamble = opts.summaryNote ? `${opts.summaryNote}\n` : "";
+
+  return `${preamble}${transcript ? `${transcript}\n` : ""}USER: ${opts.message}\nCHARACTER:`;
 }

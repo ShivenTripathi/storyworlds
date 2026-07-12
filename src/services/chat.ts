@@ -10,7 +10,19 @@ import {
   type PersonaTimelineItem,
 } from "@/ai/prompts/chat";
 import { db, dbReady } from "@/db";
-import { chatMessages, chatSessions, entities, worldReferences } from "@/db/schema";
+import {
+  chatMessages,
+  chatSessions,
+  entities,
+  entityAliases,
+  worldReferences,
+} from "@/db/schema";
+import {
+  type EntityCandidate,
+  selectRelevantContext,
+  summarizeOlderTurns,
+} from "@/domain/chat-context";
+import { frontierFilter } from "@/domain/knowledge";
 import { pageToChunkIdx } from "@/domain/schemas";
 import { ApiError } from "@/lib/errors";
 import { getBook, getChunk, getProgress } from "@/services/books";
@@ -30,8 +42,25 @@ const INNER_LIFE_REVEAL_BUFFER_CHUNKS = 20;
 // end of the book, or an explicit client acknowledgement of spoilers.
 const ENDING_PROXIMITY_BUFFER_CHUNKS = 5;
 
-const HISTORY_TURNS = 10;
-const HISTORY_ROW_LIMIT = HISTORY_TURNS * 2 + 1; // +1 to cover the just-inserted user message
+// Only the last VERBATIM_TURNS turns are sent to the model word-for-word.
+// Earlier turns (up to HISTORY_FETCH_ROWS back) are compressed into a cheap,
+// LLM-free breadcrumb note (see summarizeOlderTurns) rather than dumped in
+// full. This is the core "don't carry forward all context" change: the prompt
+// grows with the RECENT conversation, not the entire session.
+const VERBATIM_TURNS = 8;
+const VERBATIM_MSG_LIMIT = VERBATIM_TURNS * 2; // user+assistant per turn
+// Wider window we read from the DB to build the older-turns summary. Bounded
+// so a very long session never turns into an unbounded query/prompt.
+const HISTORY_FETCH_ROWS = 60;
+
+// Hard cap on chat reply length. Combined with the "be concise" persona
+// guidance, this is what stops the 200-word monologues — and keeps output
+// tokens (and Gemini free-tier quota) down.
+const CHAT_MAX_TOKENS = 500;
+
+// Bounds on how much world context the lookup step injects per turn.
+const MAX_RELEVANT_ENTITIES = 4;
+const MAX_RELEVANT_TIMELINE = 5;
 
 type EntityRow = typeof entities.$inferSelect;
 type ChatSessionRow = typeof chatSessions.$inferSelect;
@@ -101,7 +130,8 @@ export async function getKnowledge(
 
   const visibleTimeline = rawTimeline
     .filter(
-      (t) => t.approxPage == null || pageToChunkIdx(t.approxPage) <= frontierChunk,
+      (t) =>
+        t.approxPage == null || pageToChunkIdx(t.approxPage) <= frontierChunk,
     )
     .map(toPersonaTimelineItem);
 
@@ -123,13 +153,68 @@ function toPersonaTimelineItem(t: RawTimelineItem): PersonaTimelineItem {
   return { label: t.label, summary: t.summary, approxPage: t.approxPage };
 }
 
-async function getEntity(bookId: string, entityId: string): Promise<EntityRow | undefined> {
+async function getEntity(
+  bookId: string,
+  entityId: string,
+): Promise<EntityRow | undefined> {
   const [row] = await db
     .select()
     .from(entities)
     .where(and(eq(entities.bookId, bookId), eq(entities.id, entityId)))
     .limit(1);
   return row;
+}
+
+/**
+ * Loads the other entities in a book (excluding `selfId`) as lookup candidates
+ * for the relevant-context selector. In story_so_far mode the pool is
+ * frontier-gated — an entity introduced past the reader's frontier can never
+ * be surfaced — mirroring the timeline gating in getKnowledge. Only name,
+ * role, and aliases are carried; inner-life fields are never exposed for
+ * OTHER characters.
+ */
+async function loadEntityCandidates(
+  bookId: string,
+  selfId: string,
+  frontierChunk: number,
+  mode: ChatMode,
+): Promise<EntityCandidate[]> {
+  const rows = await db
+    .select({
+      id: entities.id,
+      name: entities.name,
+      introducedAtChunk: entities.introducedAtChunk,
+      attributes: entities.attributes,
+    })
+    .from(entities)
+    .where(eq(entities.bookId, bookId));
+
+  const visible =
+    mode === "story_so_far" ? frontierFilter(rows, frontierChunk) : rows;
+
+  const aliasRows = await db
+    .select({
+      entityId: entityAliases.entityId,
+      aliasNorm: entityAliases.aliasNorm,
+    })
+    .from(entityAliases)
+    .where(eq(entityAliases.bookId, bookId));
+
+  const aliasesByEntity = new Map<string, string[]>();
+  for (const a of aliasRows) {
+    const list = aliasesByEntity.get(a.entityId) ?? [];
+    list.push(a.aliasNorm);
+    aliasesByEntity.set(a.entityId, list);
+  }
+
+  return visible
+    .filter((e) => e.id !== selfId)
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      role: (e.attributes as PersonaAttributes | null)?.role,
+      aliases: aliasesByEntity.get(e.id) ?? [],
+    }));
 }
 
 /**
@@ -172,7 +257,9 @@ export async function getOrCreateSession(
     .limit(1);
 
   if (!existing) {
-    throw new Error("getOrCreateSession: failed to create or find chat session");
+    throw new Error(
+      "getOrCreateSession: failed to create or find chat session",
+    );
   }
   return existing;
 }
@@ -257,7 +344,15 @@ export interface ChatStreamResult {
 export async function streamChatReply(
   opts: StreamChatReplyOptions,
 ): Promise<ChatStreamResult> {
-  const { userId, bookId, entityId, mode, message, chunkIdx, acknowledgeSpoilers } = opts;
+  const {
+    userId,
+    bookId,
+    entityId,
+    mode,
+    message,
+    chunkIdx,
+    acknowledgeSpoilers,
+  } = opts;
   await dbReady;
 
   const entity = await getEntity(bookId, entityId);
@@ -274,7 +369,8 @@ export async function streamChatReply(
   if (mode === "after_ending") {
     const totalChunks = book?.totalChunks ?? null;
     const nearEnding =
-      totalChunks != null && frontierChunk >= totalChunks - ENDING_PROXIMITY_BUFFER_CHUNKS;
+      totalChunks != null &&
+      frontierChunk >= totalChunks - ENDING_PROXIMITY_BUFFER_CHUNKS;
     if (!nearEnding && !acknowledgeSpoilers) {
       throw new ApiError(
         403,
@@ -287,7 +383,12 @@ export async function streamChatReply(
   await assertBudget(bookId);
 
   const session = await getOrCreateSession(userId, bookId, entityId, mode);
-  const userMessage = await appendMessage(session.id, "user", message, chunkIdx);
+  const userMessage = await appendMessage(
+    session.id,
+    "user",
+    message,
+    chunkIdx,
+  );
 
   const knowledge = await getKnowledge(bookId, entityId, frontierChunk, mode);
 
@@ -304,24 +405,50 @@ export async function streamChatReply(
     .where(eq(worldReferences.bookId, bookId))
     .limit(1);
 
+  // Lookup step: pick only the world context relevant to THIS message rather
+  // than dumping the whole timeline + full cast every turn. Candidates are
+  // frontier-gated (story_so_far never surfaces an entity the reader hasn't
+  // met yet) and exclude the character themself.
+  const candidates = await loadEntityCandidates(
+    bookId,
+    entityId,
+    frontierChunk,
+    mode,
+  );
+  const relevant = selectRelevantContext({
+    message,
+    candidates,
+    timeline: knowledge.visibleTimeline,
+    maxEntities: MAX_RELEVANT_ENTITIES,
+    maxTimeline: MAX_RELEVANT_TIMELINE,
+  });
+
   const persona = buildPersona({
     entity: { name: entity.name, visualDescription: entity.visualDescription },
     mode,
-    knowledge,
+    attributes: knowledge.attributes,
+    timeline: relevant.timeline,
+    relevantEntities: relevant.entities,
     currentPageText: chunk?.text ?? "",
     settingDescription: world?.settingDescription ?? "",
   });
 
-  const historyRows = await getHistory(session.id, HISTORY_ROW_LIMIT);
-  const history: ChatHistoryTurn[] = historyRows
+  // Bounded, sessioned history: send only the last VERBATIM_TURNS turns
+  // verbatim; compress anything older into a cheap breadcrumb note so we stop
+  // re-stuffing the entire conversation into every turn.
+  const priorTurns: ChatHistoryTurn[] = (
+    await getHistory(session.id, HISTORY_FETCH_ROWS)
+  )
     .filter((m) => m.id !== userMessage.id)
-    .slice(-(HISTORY_TURNS * 2))
     .map((m) => ({
       role: m.role === "assistant" ? ("assistant" as const) : ("user" as const),
       content: m.content,
     }));
+  const verbatim = priorTurns.slice(-VERBATIM_MSG_LIMIT);
+  const older = priorTurns.slice(0, priorTurns.length - verbatim.length);
+  const summaryNote = summarizeOlderTurns(older);
 
-  const prompt = buildChatPrompt({ history, message });
+  const prompt = buildChatPrompt({ history: verbatim, message, summaryNote });
 
   const { stream: rawStream, usage } = await streamText({
     operation: "chat",
@@ -329,6 +456,7 @@ export async function streamChatReply(
     prompt,
     bookId,
     userId,
+    maxTokens: CHAT_MAX_TOKENS,
   });
 
   let resolveAssistantId!: (id: number) => void;
@@ -352,7 +480,12 @@ export async function streamChatReply(
         yield delta;
       }
       await usage;
-      const assistantMessage = await appendMessage(session.id, "assistant", full, chunkIdx);
+      const assistantMessage = await appendMessage(
+        session.id,
+        "assistant",
+        full,
+        chunkIdx,
+      );
       resolveAssistantId(assistantMessage.id);
     } catch (err) {
       rejectAssistantId(err);
