@@ -136,8 +136,9 @@ export function FeedbackWidget() {
   }, [step]);
 
   async function handleSubmit() {
-    if (!message.trim()) {
-      setError("Add a few words before sending.");
+    // Free-form is optional — but send *something* (a note or a thumbs).
+    if (!message.trim() && !sentiment) {
+      setError("Add a note or pick a thumbs up/down.");
       textareaRef.current?.focus();
       return;
     }
@@ -307,7 +308,8 @@ export function FeedbackWidget() {
 
                 <label className="mt-4 block">
                   <span className="mb-1 block font-ui text-xs text-muted-foreground">
-                    {KIND_META[kind].prompt}
+                    {KIND_META[kind].prompt}{" "}
+                    <span className="opacity-70">(optional)</span>
                   </span>
                   <textarea
                     ref={textareaRef}
@@ -316,8 +318,6 @@ export function FeedbackWidget() {
                     disabled={busy}
                     maxLength={4000}
                     rows={4}
-                    required
-                    aria-required="true"
                     className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 font-ui text-sm text-foreground outline-none focus:border-[var(--ring)] disabled:opacity-60"
                   />
                 </label>
@@ -339,7 +339,7 @@ export function FeedbackWidget() {
                   </button>
                   <button
                     type="button"
-                    disabled={busy || !message.trim()}
+                    disabled={busy || (!message.trim() && !sentiment)}
                     onClick={handleSubmit}
                     className="min-h-11 rounded-full bg-[var(--primary)] px-5 py-2 font-ui text-sm font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
                   >

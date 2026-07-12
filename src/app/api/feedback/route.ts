@@ -21,14 +21,25 @@ const contextSchema = z
   })
   .passthrough();
 
-const bodySchema = z.object({
-  kind: z.enum(["praise", "idea", "bug", "general"]),
-  sentiment: z.enum(["up", "down"]).optional(),
-  rating: z.number().int().min(1).max(5).optional(),
-  message: z.string().trim().min(1).max(4000),
-  pathname: z.string().max(2000).optional(),
-  context: contextSchema.optional(),
-});
+const bodySchema = z
+  .object({
+    kind: z.enum(["praise", "idea", "bug", "general"]),
+    sentiment: z.enum(["up", "down"]).optional(),
+    rating: z.number().int().min(1).max(5).optional(),
+    // Free-form message is OPTIONAL — a reader can send just a thumbs-up/down
+    // (or a rating) without typing anything.
+    message: z.string().trim().max(4000).optional().default(""),
+    pathname: z.string().max(2000).optional(),
+    context: contextSchema.optional(),
+  })
+  // ...but the submission must carry *something* — a message, a sentiment, or
+  // a rating — so an empty form can't be posted.
+  .refine(
+    (d) => d.message.length > 0 || d.sentiment != null || d.rating != null,
+    {
+      message: "Add a note or a thumbs up/down.",
+    },
+  );
 
 /**
  * Readers submit feedback from anywhere in the app via the FeedbackWidget.
@@ -48,7 +59,7 @@ export async function POST(req: NextRequest) {
       throw new ApiError(
         400,
         "invalid_request",
-        "Feedback needs a type and a message (up to 4000 characters).",
+        "Add a note or a thumbs up/down to send feedback.",
       );
     }
 
