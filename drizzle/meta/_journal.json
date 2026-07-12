@@ -43,6 +43,13 @@
       "when": 1783854201476,
       "tag": "0005_perpetual_thaddeus_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1783877014439,
+      "tag": "0006_soft_lily_hollister",
+      "breakpoints": true
     }
   ]
 }

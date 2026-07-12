@@ -453,6 +453,38 @@ export const achievements = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// feedback — reader-submitted feedback (praise/idea/bug/general), captured
+// with tracing about what the reader was doing (pathname + context) so an
+// admin can reproduce it without asking follow-up questions.
+// ---------------------------------------------------------------------------
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind").notNull(), // 'praise' | 'idea' | 'bug' | 'general'
+    sentiment: text("sentiment"), // 'up' | 'down' | null (optional)
+    rating: integer("rating"), // 1-5 rubric, optional
+    message: text("message").notNull(),
+    // The page the reader was on when they opened the widget.
+    pathname: text("pathname"),
+    // Auto-captured tracing, never asked for: { bookId?, viewport: {width,
+    // height}, userAgent, referrer, appVersion? }.
+    context: jsonb("context"),
+    status: text("status").default("new").notNull(), // 'new' | 'triaged' | 'resolved'
+    adminNote: text("admin_note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("feedback_status_created_at_idx").on(table.status, table.createdAt),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // apiKeys
 // ---------------------------------------------------------------------------
 export const apiKeys = pgTable("api_keys", {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { CATALOG_SEED } from "@/catalog/gutenberg";
 import type { Archetype } from "@/theme/archetypes";
 import { AdminBooksTable } from "./AdminBooksTable";
@@ -120,11 +121,19 @@ export function AdminClient() {
 
   return (
     <div>
-      <div className="mb-8">
-        <p className="eyebrow mb-2">THE PRESS ROOM</p>
-        <h1 className="font-display text-4xl leading-tight sm:text-5xl">
-          Admin
-        </h1>
+      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="eyebrow mb-2">THE PRESS ROOM</p>
+          <h1 className="font-display text-4xl leading-tight sm:text-5xl">
+            Admin
+          </h1>
+        </div>
+        <Link
+          href="/admin/feedback"
+          className="rounded-full border border-border px-4 py-1.5 font-ui text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Reader mail / Feedback →
+        </Link>
       </div>
 
       <div className="mb-10 grid grid-cols-2 gap-4 sm:grid-cols-4">

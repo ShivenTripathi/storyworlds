@@ -33,3 +33,43 @@ export interface AdminOverview {
     tokensToday: number;
   };
 }
+
+/**
+ * Wire shapes for /api/admin/feedback, mirroring src/services/feedback.ts
+ * without importing it (see the file-level comment above).
+ */
+export type FeedbackKind = "praise" | "idea" | "bug" | "general";
+export type FeedbackSentiment = "up" | "down";
+export type FeedbackStatus = "new" | "triaged" | "resolved";
+
+export interface FeedbackContext {
+  bookId?: string;
+  viewport?: { width: number; height: number };
+  userAgent?: string;
+  referrer?: string;
+  appVersion?: string;
+  [key: string]: unknown;
+}
+
+export interface FeedbackRow {
+  id: string;
+  userId: string;
+  userEmail: string | null;
+  kind: FeedbackKind;
+  sentiment: FeedbackSentiment | null;
+  rating: number | null;
+  message: string;
+  pathname: string | null;
+  context: FeedbackContext | null;
+  status: FeedbackStatus;
+  adminNote: string | null;
+  createdAt: string;
+}
+
+export interface FeedbackListResponse {
+  items: FeedbackRow[];
+  counts: {
+    byKind: Record<FeedbackKind, number>;
+    bySentiment: { up: number; down: number; none: number };
+  };
+}

@@ -4,7 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
+import { FeedbackWidget } from "@/components/feedback/FeedbackWidget";
 import { SoundToggle } from "@/components/sound/SoundToggle";
+
+// The immersive reader (src/components/reader/Reader.tsx) renders its own
+// full-screen chrome over this header, so the Feedback trigger is hidden
+// there rather than sitting behind it, unreachable but still tab-focusable.
+const IMMERSIVE_READER_RE = /^\/books\/[^/]+\/read(\/|$)/;
 
 interface NavLink {
   href: string;
@@ -96,6 +102,9 @@ export function AppHeader() {
         </div>
 
         <div className="flex items-center gap-1.5">
+          {!IMMERSIVE_READER_RE.test(pathname ?? "") ? (
+            <FeedbackWidget />
+          ) : null}
           <SoundToggle />
           <div className="rounded-full focus-within:ring-2 focus-within:ring-[var(--ring)]">
             <UserButton />
