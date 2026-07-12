@@ -92,9 +92,16 @@ function parseModelSlot(slot: string): { provider: Provider; model: string } {
   return { provider: "anthropic", model: slot };
 }
 
-function costUsd(model: string, inputTokens: number, outputTokens: number): number {
+function costUsd(
+  model: string,
+  inputTokens: number,
+  outputTokens: number,
+): number {
   const price = PRICE_TABLE[model] ?? { in: 0, out: 0 };
-  return (inputTokens / 1_000_000) * price.in + (outputTokens / 1_000_000) * price.out;
+  return (
+    (inputTokens / 1_000_000) * price.in +
+    (outputTokens / 1_000_000) * price.out
+  );
 }
 
 function modelForOperation(operation: LlmOperation): string {
@@ -109,6 +116,27 @@ function modelForOperation(operation: LlmOperation): string {
       return env.MODEL_SEGMENT;
     default:
       return env.MODEL_SEGMENT;
+  }
+}
+
+/**
+ * Per-operation output-token budget. Segment/overlay emit a small per-page or
+ * per-segment JSON, but SYNTHESIS emits the whole book at once — every entity
+ * (with its description + attributes), the timeline, commitments, unknowns and
+ * the blurb — which for a large cast easily exceeds 8k tokens. Under-budgeting
+ * it truncates the JSON mid-stream (finishReason MAX_TOKENS) and the parse
+ * fails with a non-retryable error, which is what made analysis die at the
+ * "Weaving the world…" (70%) step. Gemini 2.5 Flash allows up to 65k output
+ * tokens, so give synthesis generous headroom.
+ */
+function maxTokensForOperation(operation: LlmOperation): number {
+  switch (operation) {
+    case "synthesis":
+      return 32768;
+    case "chat":
+      return 1024;
+    default:
+      return 8192;
   }
 }
 
@@ -257,7 +285,8 @@ class AnthropicDriver implements LlmDriver {
     });
 
     const toolUse = response.content.find(
-      (b): b is Extract<typeof b, { type: "tool_use" }> => b.type === "tool_use",
+      (b): b is Extract<typeof b, { type: "tool_use" }> =>
+        b.type === "tool_use",
     );
     if (!toolUse) {
       throw new Error("Anthropic response did not contain a tool_use block");
@@ -412,16 +441,31 @@ class GeminiDriver implements LlmDriver {
           },
         });
 
+        const finishReason = response.candidates?.[0]?.finishReason;
         const text = response.text;
         if (!text) {
-          throw new Error("Gemini response had no text content");
+          throw new Error(
+            `Gemini response had no text content (finishReason=${finishReason ?? "unknown"})`,
+          );
+        }
+
+        // A truncated response (hit the output-token cap) yields partial JSON
+        // that JSON.parse would reject with a confusing "not valid JSON" — call
+        // it out explicitly so the fix (raise maxOutputTokens for this op) is
+        // obvious. See maxTokensForOperation.
+        if (finishReason === "MAX_TOKENS") {
+          throw new Error(
+            `Gemini output truncated at the token cap (op=${opts.operation}, maxOutputTokens=${opts.maxTokens}). Raise the budget for this operation.`,
+          );
         }
 
         let raw: unknown;
         try {
           raw = JSON.parse(text);
         } catch {
-          throw new Error(`Gemini response was not valid JSON: ${text.slice(0, 500)}`);
+          throw new Error(
+            `Gemini response was not valid JSON: ${text.slice(0, 500)}`,
+          );
         }
 
         return {
@@ -470,16 +514,22 @@ class GeminiDriver implements LlmDriver {
 
     let inputTokens = 0;
     let outputTokens = 0;
-    let resolveUsage!: (usage: { inputTokens: number; outputTokens: number }) => void;
-    const usage = new Promise<{ inputTokens: number; outputTokens: number }>((resolve) => {
-      resolveUsage = resolve;
-    });
+    let resolveUsage!: (usage: {
+      inputTokens: number;
+      outputTokens: number;
+    }) => void;
+    const usage = new Promise<{ inputTokens: number; outputTokens: number }>(
+      (resolve) => {
+        resolveUsage = resolve;
+      },
+    );
 
     async function* textStream(): AsyncGenerator<string> {
       for await (const chunk of generator) {
         if (chunk.usageMetadata) {
           inputTokens = chunk.usageMetadata.promptTokenCount ?? inputTokens;
-          outputTokens = chunk.usageMetadata.candidatesTokenCount ?? outputTokens;
+          outputTokens =
+            chunk.usageMetadata.candidatesTokenCount ?? outputTokens;
         }
         if (chunk.text) {
           yield chunk.text;
@@ -511,7 +561,9 @@ async function recordUsage(opts: {
       operation: opts.operation,
       inputTokens: opts.inputTokens,
       outputTokens: opts.outputTokens,
-      costUsd: costUsd(opts.model, opts.inputTokens, opts.outputTokens).toFixed(6),
+      costUsd: costUsd(opts.model, opts.inputTokens, opts.outputTokens).toFixed(
+        6,
+      ),
     });
   } catch (err) {
     console.error("[ai] failed to record usage event:", err);
@@ -544,7 +596,7 @@ export async function completeJson<S extends z.ZodTypeAny>(
 
   const { provider, model } = parseModelSlot(modelForOperation(opts.operation));
   const driver = getDriver(provider);
-  const maxTokens = opts.maxTokens ?? 8192;
+  const maxTokens = opts.maxTokens ?? maxTokensForOperation(opts.operation);
 
   let prompt = opts.prompt;
   let lastResult: DriverResult | undefined;
@@ -630,7 +682,9 @@ const DEFAULT_CHAT_MAX_TOKENS = 1024;
  * else MockDriver), streams plain-text deltas, and records exactly one
  * usageEvents row once the model has finished responding.
  */
-export async function streamText(opts: StreamTextOptions): Promise<StreamTextResult> {
+export async function streamText(
+  opts: StreamTextOptions,
+): Promise<StreamTextResult> {
   const { provider, model } = parseModelSlot(modelForOperation(opts.operation));
   const driver = getDriver(provider);
   const maxTokens = opts.maxTokens ?? DEFAULT_CHAT_MAX_TOKENS;

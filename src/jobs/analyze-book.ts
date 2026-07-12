@@ -208,6 +208,7 @@ async function persistWorld(
     .update(books)
     .set({
       themeArchetype: synthesis.visualStyle.themeArchetype,
+      blurb: synthesis.blurb,
       updatedAt: new Date(),
     })
     .where(eq(books.id, bookId));
@@ -362,15 +363,21 @@ export const analyzeBook = inngest.createFunction(
     // free-tier ceiling (→ 429s).
     concurrency: 1,
     triggers: [{ event: "book/analyze.requested" }],
-    onFailure: async ({ event }) => {
+    onFailure: async ({ event, error }) => {
       const jobId = (event.data as { event?: { data?: { jobId?: string } } })
         .event?.data?.jobId;
       if (!jobId) return;
+      // Record the REAL error (truncated) rather than an opaque generic
+      // message — otherwise every failure looks identical and is impossible
+      // to diagnose without digging through Inngest/Vercel logs. Still short
+      // and prefixed so the reader-facing surface stays civil.
+      const detail =
+        error instanceof Error ? error.message : String(error ?? "unknown");
+      console.error(`[analyze-book] job ${jobId} failed:`, error);
       try {
         await updateJob(jobId, {
           status: "failed",
-          error:
-            "Analysis failed. Please try again or contact support if this persists.",
+          error: `Analysis failed: ${detail}`.slice(0, 500),
         });
       } catch (err) {
         console.error(
