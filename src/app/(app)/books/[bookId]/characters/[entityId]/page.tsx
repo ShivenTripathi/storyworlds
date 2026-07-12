@@ -3,9 +3,9 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { ChatPanel } from "@/components/chat/ChatPanel";
-import { fetchWorld } from "@/components/world/api";
+import { fetchWorldEntity } from "@/components/world/api";
 import { ProgressChip } from "@/components/world/ProgressChip";
-import type { World, WorldEntity } from "@/components/world/types";
+import type { WorldEntity } from "@/components/world/types";
 
 type LoadState = "loading" | "ready" | "not-found" | "error";
 
@@ -15,8 +15,13 @@ export default function CharacterDossierPage({
   params: Promise<{ bookId: string; entityId: string }>;
 }) {
   const { bookId, entityId } = use(params);
+  // On client-side <Link> navigation Next hands back the raw path segment,
+  // so an id like `char:sherlock-holmes` arrives percent-encoded
+  // (`char%3Asherlock-holmes`). Decode before it's used as an entity id.
+  const decodedEntityId = decodeURIComponent(entityId);
 
-  const [world, setWorld] = useState<World | null>(null);
+  const [entity, setEntity] = useState<WorldEntity | null>(null);
+  const [themeArchetype, setThemeArchetype] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [chatOpen, setChatOpen] = useState(false);
 
@@ -25,10 +30,14 @@ export default function CharacterDossierPage({
 
     async function load() {
       try {
-        const { world: w } = await fetchWorld(bookId);
+        const { entity: e, themeArchetype: theme } = await fetchWorldEntity(
+          bookId,
+          decodedEntityId,
+        );
         if (cancelled) return;
-        setWorld(w);
-        setLoadState("ready");
+        setEntity(e);
+        setThemeArchetype(theme);
+        setLoadState(e ? "ready" : "not-found");
       } catch {
         if (!cancelled) setLoadState("error");
       }
@@ -38,12 +47,14 @@ export default function CharacterDossierPage({
     return () => {
       cancelled = true;
     };
-  }, [bookId]);
+  }, [bookId, decodedEntityId]);
 
   if (loadState === "loading") {
     return (
       <div className="py-24 text-center">
-        <p className="font-ui text-sm text-muted-foreground">Opening the dossier…</p>
+        <p className="font-ui text-sm text-muted-foreground">
+          Opening the dossier…
+        </p>
       </div>
     );
   }
@@ -58,16 +69,16 @@ export default function CharacterDossierPage({
     );
   }
 
-  const entity = world?.entities?.find((e) => e.id === entityId);
-
   if (!entity) {
     return (
       <div className="py-24 text-center">
         <p className="eyebrow mb-4">NOT YET MET</p>
-        <h1 className="font-display text-2xl">You haven&apos;t met this character yet.</h1>
+        <h1 className="font-display text-2xl">
+          You haven&apos;t met this character yet.
+        </h1>
         <Link
           href={`/books/${bookId}/read`}
-          className="font-ui mt-6 inline-block text-sm text-[var(--primary)] hover:opacity-80"
+          className="mt-6 inline-block font-ui text-sm text-[var(--primary)] hover:opacity-80"
         >
           Back to reading
         </Link>
@@ -76,13 +87,18 @@ export default function CharacterDossierPage({
   }
 
   return (
-    <div data-world-theme={world?.themeArchetype ?? undefined} className="mx-auto max-w-2xl px-6 py-12">
+    <div
+      data-world-theme={themeArchetype ?? undefined}
+      className="mx-auto max-w-2xl px-6 py-12"
+    >
       <p className="eyebrow mb-2">DOSSIER · AS OF YOUR PAGE</p>
       <h1 className="font-display text-4xl leading-tight">{entity.name}</h1>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {entity.attributes?.role ? (
-          <span className="font-ui text-sm text-muted-foreground">{entity.attributes.role}</span>
+          <span className="font-ui text-sm text-muted-foreground">
+            {entity.attributes.role}
+          </span>
         ) : null}
         <ProgressChip introducedAtChunk={entity.introducedAtChunk} />
       </div>
@@ -93,16 +109,22 @@ export default function CharacterDossierPage({
         <button
           type="button"
           onClick={() => setChatOpen(true)}
-          className="font-ui mt-8 rounded-full bg-[var(--world-accent)] px-6 py-2.5 text-sm font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90"
+          className="mt-8 rounded-full bg-[var(--world-accent)] px-6 py-2.5 font-ui text-sm font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90"
         >
           Talk to {entity.name}
         </button>
       ) : (
-        <section className="mt-10 border-t pt-8" style={{ borderColor: "var(--world-frame)" }}>
+        <section
+          className="mt-10 border-t pt-8"
+          style={{ borderColor: "var(--world-frame)" }}
+        >
           <p className="eyebrow mb-4">A CONVERSATION</p>
           <div
             className="h-[520px] rounded-md border p-4"
-            style={{ borderColor: "var(--world-frame)", background: "var(--world-surface)" }}
+            style={{
+              borderColor: "var(--world-frame)",
+              background: "var(--world-surface)",
+            }}
           >
             <ChatPanel
               bookId={bookId}
@@ -119,14 +141,18 @@ export default function CharacterDossierPage({
 
 function DossierSections({ entity }: { entity: WorldEntity }) {
   const { attributes } = entity;
-  const hasInnerLife = Boolean(attributes?.internalState || attributes?.keyMotivation);
+  const hasInnerLife = Boolean(
+    attributes?.internalState || attributes?.keyMotivation,
+  );
 
   return (
     <div className="mt-8 space-y-8">
       {attributes?.role ? (
         <section>
           <p className="eyebrow mb-2">WHO THEY ARE</p>
-          <p className="font-reading text-sm leading-relaxed">{attributes.role}</p>
+          <p className="font-reading text-sm leading-relaxed">
+            {attributes.role}
+          </p>
         </section>
       ) : null}
 
@@ -134,7 +160,9 @@ function DossierSections({ entity }: { entity: WorldEntity }) {
         <section className="space-y-3">
           <p className="eyebrow mb-2">THE INNER LIFE</p>
           {attributes?.internalState ? (
-            <p className="font-reading text-sm leading-relaxed">{attributes.internalState}</p>
+            <p className="font-reading text-sm leading-relaxed">
+              {attributes.internalState}
+            </p>
           ) : null}
           {attributes?.keyMotivation ? (
             <p className="font-reading text-sm leading-relaxed text-muted-foreground">
@@ -147,7 +175,9 @@ function DossierSections({ entity }: { entity: WorldEntity }) {
       {entity.visualDescription ? (
         <section>
           <p className="eyebrow mb-2">IN THE MIND&apos;S EYE</p>
-          <p className="font-reading text-sm leading-relaxed italic">{entity.visualDescription}</p>
+          <p className="font-reading text-sm leading-relaxed italic">
+            {entity.visualDescription}
+          </p>
         </section>
       ) : null}
     </div>

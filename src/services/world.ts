@@ -62,7 +62,9 @@ function reduceAttributes(
     introducedAtChunk != null &&
     frontierChunk >= introducedAtChunk + INNER_LIFE_REVEAL_BUFFER_CHUNKS;
   if (earned) return attributes;
-  const out: Record<string, unknown> = { ...(attributes as Record<string, unknown>) };
+  const out: Record<string, unknown> = {
+    ...(attributes as Record<string, unknown>),
+  };
   for (const k of INNER_LIFE_KEYS) delete out[k];
   return out;
 }
@@ -89,7 +91,12 @@ export async function getWorldForReader(opts: {
 
   if (!world || world.status !== "completed") {
     const [runningJob] = await db
-      .select({ id: jobs.id, status: jobs.status, progress: jobs.progress, stage: jobs.stage })
+      .select({
+        id: jobs.id,
+        status: jobs.status,
+        progress: jobs.progress,
+        stage: jobs.stage,
+      })
       .from(jobs)
       .where(
         and(
@@ -118,7 +125,10 @@ export async function getWorldForReader(opts: {
       .select({ frontierChunk: readingProgress.frontierChunk })
       .from(readingProgress)
       .where(
-        and(eq(readingProgress.userId, opts.userId), eq(readingProgress.bookId, opts.bookId)),
+        and(
+          eq(readingProgress.userId, opts.userId),
+          eq(readingProgress.bookId, opts.bookId),
+        ),
       )
       .limit(1);
     frontierChunk = progress?.frontierChunk ?? 0;
@@ -131,11 +141,14 @@ export async function getWorldForReader(opts: {
 
   const visibleEntities = entityRows.filter((e) => {
     if (frontierChunk === null) return true;
-    if (e.introducedAtChunk === null || e.introducedAtChunk === undefined) return true;
+    if (e.introducedAtChunk === null || e.introducedAtChunk === undefined)
+      return true;
     return e.introducedAtChunk <= frontierChunk;
   });
 
-  const timeline = Array.isArray(world.timeline) ? (world.timeline as TimelineItem[]) : [];
+  const timeline = Array.isArray(world.timeline)
+    ? (world.timeline as TimelineItem[])
+    : [];
   const filteredTimeline =
     frontierChunk === null
       ? timeline
@@ -154,6 +167,75 @@ export async function getWorldForReader(opts: {
     entities: visibleEntities.map((e) => toEntityDto(e, frontierChunk)),
     counts: { total: entityRows.length, visible: visibleEntities.length },
   };
+}
+
+export interface DossierEntityDto {
+  themeArchetype: string | null;
+  entity: WorldEntityDto | null;
+}
+
+/**
+ * Resolves a SINGLE entity by id for its dossier page. Unlike
+ * {@link getWorldForReader}, membership is NOT frontier-filtered — a reader
+ * who has the entity's id (e.g. followed a "Dossier →" link, or a shared URL)
+ * can always open the page, even for a character introduced slightly ahead of
+ * their frontier. Spoiler safety is preserved at the *attribute* level: the
+ * same `reduceAttributes` buffer strips inner-life fields until earned, so
+ * role/appearance are visible immediately but motivation/scars stay gated
+ * exactly as they are in the rail. Returns `{entity: null}` when the world
+ * isn't analyzed yet or no entity matches the id.
+ */
+export async function getEntityForDossier(opts: {
+  bookId: string;
+  userId: string;
+  entityId: string;
+  useFrontier: boolean;
+}): Promise<DossierEntityDto> {
+  await dbReady;
+
+  const [world] = await db
+    .select({ status: worldReferences.status })
+    .from(worldReferences)
+    .where(eq(worldReferences.bookId, opts.bookId))
+    .limit(1);
+
+  if (!world || world.status !== "completed") {
+    return { themeArchetype: null, entity: null };
+  }
+
+  const [book] = await db
+    .select({ themeArchetype: books.themeArchetype })
+    .from(books)
+    .where(eq(books.id, opts.bookId))
+    .limit(1);
+  const themeArchetype = book?.themeArchetype ?? "classic";
+
+  const [entity] = await db
+    .select()
+    .from(entities)
+    .where(
+      and(eq(entities.bookId, opts.bookId), eq(entities.id, opts.entityId)),
+    )
+    .limit(1);
+
+  if (!entity) return { themeArchetype, entity: null };
+
+  let frontierChunk: number | null = null;
+  if (opts.useFrontier) {
+    const [progress] = await db
+      .select({ frontierChunk: readingProgress.frontierChunk })
+      .from(readingProgress)
+      .where(
+        and(
+          eq(readingProgress.userId, opts.userId),
+          eq(readingProgress.bookId, opts.bookId),
+        ),
+      )
+      .limit(1);
+    frontierChunk = progress?.frontierChunk ?? 0;
+  }
+
+  return { themeArchetype, entity: toEntityDto(entity, frontierChunk) };
 }
 
 /**
@@ -199,7 +281,11 @@ function toEntityDto(
     id: e.id,
     name: e.name,
     kind: e.kind,
-    attributes: reduceAttributes(e.attributes, e.introducedAtChunk, frontierChunk),
+    attributes: reduceAttributes(
+      e.attributes,
+      e.introducedAtChunk,
+      frontierChunk,
+    ),
     visualDescription: e.visualDescription,
     introducedAtChunk: e.introducedAtChunk,
   };

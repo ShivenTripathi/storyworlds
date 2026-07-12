@@ -2,8 +2,19 @@ import type {
   ApiErrorBody,
   JobResponse,
   OverlayResponse,
+  WorldEntity,
   WorldResponse,
 } from "./types";
+
+/**
+ * Single-entity dossier lookup contract
+ * (GET /api/books/{id}/world/entities/{entityId}). `entity` is null when the
+ * world isn't analyzed yet or no entity matches the id.
+ */
+export interface WorldEntityResponse {
+  entity: WorldEntity | null;
+  themeArchetype: string | null;
+}
 
 /**
  * Thin fetch wrapper for the "world" API contract. All routes are
@@ -52,6 +63,22 @@ export function fetchWorld(bookId: string): Promise<WorldResponse> {
 }
 
 /**
+ * Fetches a single entity's dossier by id. Resolves the entity regardless of
+ * the reader's frontier (so a "Dossier →" link never dead-ends), with
+ * inner-life attributes still spoiler-gated server-side. Entity ids contain a
+ * colon (`char:sherlock-holmes`); we encode the id so it survives as one path
+ * segment.
+ */
+export function fetchWorldEntity(
+  bookId: string,
+  entityId: string,
+): Promise<WorldEntityResponse> {
+  return request<WorldEntityResponse>(
+    `/api/books/${bookId}/world/entities/${encodeURIComponent(entityId)}`,
+  );
+}
+
+/**
  * Kicks off (or resumes) analysis for a book. A 409 `already_analyzed`
  * response is not an error from the caller's perspective — the world
  * already exists, so callers should treat it as "go refetch the world".
@@ -80,6 +107,9 @@ export function fetchJob(jobId: string): Promise<JobResponse> {
  * means the book's world isn't in a state to have overlays yet — callers
  * should treat that as terminal, not retry.
  */
-export function fetchOverlay(bookId: string, chunkIdx: number): Promise<OverlayResponse> {
+export function fetchOverlay(
+  bookId: string,
+  chunkIdx: number,
+): Promise<OverlayResponse> {
   return request<OverlayResponse>(`/api/books/${bookId}/overlays/${chunkIdx}`);
 }
