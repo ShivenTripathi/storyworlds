@@ -40,13 +40,19 @@ const envSchema = z.object({
   GOOGLE_API_KEY: z.string().optional(),
 
   // --- Model slots ---
-  // Values may be provider-prefixed (`gemini:gemini-2.5-flash-lite`,
+  // Values may be provider-prefixed (`gemini:gemini-2.5-flash`,
   // `anthropic:claude-haiku-4-5`); a bare model name is treated as
   // `anthropic:` for backward compat. Defaults target Google AI Studio's
   // free tier (card-free) — see ZERO-COST CONSTRAINT in CLAUDE.md.
-  MODEL_SEGMENT: z.string().default("gemini:gemini-2.5-flash-lite"),
-  MODEL_SYNTHESIS: z.string().default("gemini:gemini-2.5-flash"),
-  MODEL_CHAT: z.string().default("gemini:gemini-2.5-flash-lite"),
+  // Use Google's floating `-latest` aliases so we never break when a specific
+  // version is retired: Google deprecated the entire gemini-2.5 line for
+  // newly-created keys (both 2.5-flash and 2.5-flash-lite now 404 with "no
+  // longer available to new users"). The aliases always resolve to the current
+  // model. lite = cheaper + higher RPM (good for bulk catalog ingestion);
+  // the plain alias for the one quality-critical synthesis call.
+  MODEL_SEGMENT: z.string().default("gemini:gemini-flash-lite-latest"),
+  MODEL_SYNTHESIS: z.string().default("gemini:gemini-flash-latest"),
+  MODEL_CHAT: z.string().default("gemini:gemini-flash-lite-latest"),
   MODEL_IMAGE: z.string().default("none"),
   // Illustrate every Nth page (chunkIdx % IMAGE_INTERVAL === 0). Mirrors
   // books.imageInterval as a global fallback/default.
@@ -71,7 +77,10 @@ const envSchema = z.object({
   // exactly the footgun an env var like this invites — preprocess instead.
   BILLING_ENABLED: z
     .preprocess(
-      (v) => (typeof v === "string" ? ["1", "true", "yes"].includes(v.toLowerCase()) : v),
+      (v) =>
+        typeof v === "string"
+          ? ["1", "true", "yes"].includes(v.toLowerCase())
+          : v,
       z.boolean(),
     )
     .default(false),
