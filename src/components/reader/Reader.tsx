@@ -11,6 +11,7 @@ import {
 } from "./api";
 import { ChapterPlate } from "./ChapterPlate";
 import { ReaderSettings } from "./ReaderSettings";
+import { SoundscapeControl } from "./SoundscapeControl";
 import { useOverlay } from "./useOverlay";
 import {
   loadRailWidth,
@@ -514,6 +515,7 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
           >
             World
           </button>
+          <SoundscapeControl bookArchetype={book?.themeArchetype} />
           <ReaderSettings settings={settings} onChange={setSettings} />
         </div>
       </header>

@@ -75,6 +75,19 @@ function ctx(): AudioContext | null {
   return audioCtx;
 }
 
+/**
+ * Exposes the same lazily-created, gesture-resumed AudioContext to other
+ * in-browser audio modules (e.g. `src/lib/soundscape.ts`'s ambient engine) so
+ * the app never spins up more than one — browsers cap how many contexts can
+ * run concurrently, and the "resume on suspend" dance only needs to live in
+ * one place. Callers bring their own GainNode(s) downstream of this; this
+ * module's `master` (the quiet one-shot-cue gain) is intentionally not
+ * shared, since cues and ambient beds have independent volume/mute controls.
+ */
+export function getAudioContext(): AudioContext | null {
+  return ctx();
+}
+
 interface ToneOpts {
   freq: number;
   dur: number;
