@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePressAndHold } from "./usePressAndHold";
 import {
   ChatSpoilerGateError,
   fetchChatHistory,
@@ -421,8 +420,6 @@ function SpoilerConfirmPanel({
   entityName: string;
   onConfirmed: () => void;
 }) {
-  const { progress, pressing, handlers } = usePressAndHold(onConfirmed, 600);
-
   return (
     <div
       className="space-y-4 rounded-md border p-4 text-center"
@@ -433,27 +430,15 @@ function SpoilerConfirmPanel({
       </p>
       <button
         type="button"
-        {...handlers}
-        aria-describedby="spoiler-confirm-hint"
-        className="relative mx-auto flex h-11 w-full max-w-[220px] items-center justify-center overflow-hidden rounded-full border font-ui text-xs font-medium select-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
-        style={{ borderColor: "var(--world-accent)" }}
+        onClick={onConfirmed}
+        className="mx-auto flex h-11 w-full max-w-[220px] items-center justify-center rounded-full border font-ui text-xs font-medium transition-colors hover:bg-[var(--muted)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+        style={{
+          borderColor: "var(--world-accent)",
+          color: "var(--world-accent)",
+        }}
       >
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0"
-          style={{
-            width: `${progress * 100}%`,
-            background: "var(--world-accent)",
-            transition: pressing ? "none" : "width 150ms ease",
-          }}
-        />
-        <span className="relative z-10">
-          {pressing ? "Hold to confirm…" : "Press and hold: I understand"}
-        </span>
+        Yes, reveal the ending
       </button>
-      <span id="spoiler-confirm-hint" className="sr-only">
-        Press and hold, or hold Space or Enter, to confirm.
-      </span>
     </div>
   );
 }

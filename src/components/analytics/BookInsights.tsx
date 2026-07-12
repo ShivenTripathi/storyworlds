@@ -60,15 +60,6 @@ const MAX_DIRECT_LABELS = 8;
 // stay a plain accent-tinted dot.
 const MIN_RADIUS_FOR_INITIAL = 11;
 
-/** min(chunkIdx+1, totalChunks) / totalChunks — the same progress convention getBookStats uses. */
-function fractionAlongBook(
-  chunkIdx: number,
-  totalChunks: number | null,
-): number {
-  if (!totalChunks || totalChunks <= 0) return 0;
-  return Math.min(chunkIdx + 1, totalChunks) / totalChunks;
-}
-
 /** Sanitizes an entity id (e.g. `char:paul-atreides`) into a valid SVG id fragment. */
 function domId(prefix: string, id: string): string {
   return `${prefix}-${id.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
@@ -169,9 +160,9 @@ export function BookInsights({
       <section>
         <p className="eyebrow mb-3">Story so far</p>
         <p className="mb-3 font-ui text-xs text-muted-foreground">
-          Tap a marked event to jump straight to that page in the reader.
+          Tap an event to jump straight to that page in the reader.
         </p>
-        <TimelineSpine bookId={bookId} timeline={insights.timeline} />
+        <StorySoFarTimeline bookId={bookId} timeline={insights.timeline} />
       </section>
     </div>
   );
@@ -428,14 +419,35 @@ function ScreenTimeList({ nodes }: { nodes: InsightNode[] }) {
   );
 }
 
-function TimelineSpine({
+/** One row of the story-so-far timeline: a revealed event, the reader's
+ * current position, or a run of dim "more ahead" ticks. */
+type TimelineRowData =
+  | {
+      kind: "entry";
+      key: string;
+      entry: TimelineEntry;
+      chunkIdx: number | null;
+    }
+  | { kind: "position"; key: string; page: number }
+  | { kind: "hidden"; key: string; count: number };
+
+/**
+ * "Story so far" — a vertical spine of event cards, each showing its label
+ * and summary directly (no hover needed), in book order. The reader's
+ * current position gets its own marked row; events beyond the frontier are
+ * never named — server-side gating (getStoryInsights) already drops them,
+ * so `hiddenAheadCount` is rendered as a run of unlabeled, dim ticks. A
+ * vertical list rather than a horizontal rail keeps this readable at any
+ * width — it stacks naturally on mobile with no separate layout needed.
+ */
+function StorySoFarTimeline({
   bookId,
   timeline,
 }: {
   bookId: string;
   timeline: StoryInsights["timeline"];
 }) {
-  const { entries, hiddenAheadCount, frontierChunk, totalChunks } = timeline;
+  const { entries, hiddenAheadCount, frontierChunk } = timeline;
 
   if (entries.length === 0 && hiddenAheadCount === 0) {
     return (
@@ -445,150 +457,180 @@ function TimelineSpine({
     );
   }
 
-  const frontierFraction =
-    frontierChunk !== null
-      ? fractionAlongBook(frontierChunk, totalChunks)
-      : null;
+  // Entries are already frontier-gated server-side, so every one of them
+  // sits at or before the reader's current position — order them by page
+  // so the spine reads top-to-bottom the way the book does, then place the
+  // position marker after the last of them.
+  const ordered = [...entries].sort((a, b) => {
+    if (a.approxPage == null) return b.approxPage == null ? 0 : 1;
+    if (b.approxPage == null) return -1;
+    return a.approxPage - b.approxPage;
+  });
+  const frontierPage = frontierChunk != null ? frontierChunk + 1 : null;
+
+  const rows: TimelineRowData[] = [
+    ...ordered.map((entry, i) => ({
+      kind: "entry" as const,
+      key: `${entry.label}-${entry.approxPage}-${i}`,
+      entry,
+      chunkIdx:
+        entry.approxPage != null ? pageToChunkIdx(entry.approxPage) : null,
+    })),
+    ...(frontierPage != null
+      ? [{ kind: "position" as const, key: "position", page: frontierPage }]
+      : []),
+    ...(hiddenAheadCount > 0
+      ? [{ kind: "hidden" as const, key: "hidden", count: hiddenAheadCount }]
+      : []),
+  ];
 
   return (
-    <div className="overflow-x-auto">
-      <div className="relative min-w-[20rem] pt-6 pb-8">
-        {/* the spine */}
-        <div className="absolute inset-x-0 top-1/2 h-px bg-world-frame" />
-
-        {entries.map((entry, i) => {
-          const chunkIdx =
-            entry.approxPage != null ? pageToChunkIdx(entry.approxPage) : null;
-          const fraction = fractionAlongBook(chunkIdx ?? 0, totalChunks);
-          const above = i % 2 === 0;
-          return (
-            <TimelineMarker
-              key={`${entry.label}-${entry.approxPage}-${i}`}
+    <ol className="flex flex-col">
+      {rows.map((row, i) => (
+        <TimelineRow
+          key={row.key}
+          isLast={i === rows.length - 1}
+          tone={
+            row.kind === "position"
+              ? "accent"
+              : row.kind === "hidden"
+                ? "dim"
+                : "default"
+          }
+        >
+          {row.kind === "entry" ? (
+            <TimelineCard
               bookId={bookId}
-              entry={entry}
-              fraction={fraction}
-              above={above}
-              chunkIdx={chunkIdx}
+              entry={row.entry}
+              chunkIdx={row.chunkIdx}
             />
-          );
-        })}
+          ) : row.kind === "position" ? (
+            <div className="flex items-center gap-2 py-1.5">
+              <p className="font-ui text-[11px] font-semibold tracking-wide text-primary uppercase">
+                You are here
+              </p>
+              <span className="font-ui text-[11px] text-muted-foreground tabular-nums">
+                page {row.page}
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 py-1.5">
+              <span className="flex gap-1" aria-hidden="true">
+                {Array.from({ length: Math.min(row.count, 5) }).map((_, j) => (
+                  <span
+                    key={j}
+                    className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40"
+                  />
+                ))}
+              </span>
+              <p className="font-ui text-xs text-muted-foreground italic">
+                {row.count} more {row.count === 1 ? "event" : "events"} still
+                ahead.
+              </p>
+            </div>
+          )}
+        </TimelineRow>
+      ))}
+    </ol>
+  );
+}
 
-        {hiddenAheadCount > 0 ? (
-          <div
-            className="absolute top-1/2 right-0 flex -translate-y-1/2 items-center gap-1"
-            aria-label={`${hiddenAheadCount} more ${hiddenAheadCount === 1 ? "event" : "events"} ahead`}
-            title={`${hiddenAheadCount} more ${hiddenAheadCount === 1 ? "event" : "events"} ahead`}
-          >
-            {Array.from({ length: Math.min(hiddenAheadCount, 5) }).map(
-              (_, i) => (
-                <span
-                  key={i}
-                  className="h-1.5 w-1.5 rounded-full bg-muted-foreground/40"
-                  aria-hidden="true"
-                />
-              ),
-            )}
-          </div>
-        ) : null}
+/** One row's rail: a dot on the spine plus the connecting line down to the
+ * next row (omitted for the last row, so the spine doesn't trail past it). */
+function TimelineRow({
+  isLast,
+  tone = "default",
+  children,
+}: {
+  isLast: boolean;
+  tone?: "default" | "accent" | "dim";
+  children: React.ReactNode;
+}) {
+  const dotClassName =
+    tone === "accent"
+      ? "bg-primary"
+      : tone === "dim"
+        ? "bg-muted-foreground/40"
+        : "bg-world-accent";
 
-        {frontierFraction !== null ? (
-          <div
-            className="absolute top-0 bottom-0 w-px bg-primary"
-            style={{ left: `${frontierFraction * 100}%` }}
-          >
-            <span className="absolute -top-5 left-1/2 -translate-x-1/2 font-ui text-[9px] tracking-wide whitespace-nowrap text-primary uppercase">
-              You
-            </span>
-          </div>
+  return (
+    <li className="grid grid-cols-[1.5rem_1fr] gap-x-3">
+      <div className="relative flex justify-center" aria-hidden="true">
+        {!isLast ? (
+          <span className="absolute top-3 bottom-0 w-px bg-world-frame" />
         ) : null}
+        <span
+          className={`relative z-10 mt-2 h-2.5 w-2.5 shrink-0 rounded-full ${dotClassName}`}
+        />
       </div>
-
-      {hiddenAheadCount > 0 ? (
-        <p className="font-ui text-xs text-muted-foreground italic">
-          {hiddenAheadCount} more {hiddenAheadCount === 1 ? "event" : "events"}{" "}
-          still ahead.
-        </p>
-      ) : null}
-    </div>
+      <div className="min-w-0 pb-4">{children}</div>
+    </li>
   );
 }
 
 /**
- * One event marker on the timeline spine. When its page is known (the
- * common case — see StoryInsightTimelineEntry), it's a real link to
+ * One revealed event, shown with its label and summary directly — not
+ * hidden behind a hover tooltip. When its page is known (the common case —
+ * see StoryInsightTimelineEntry), the whole card is a real link to
  * `/books/{bookId}/read?chunk=N` so a reader can jump back to re-read or
  * ahead to a beat they've already unlocked; the reader route (src/app/(app)/
  * books/[bookId]/read/page.tsx) parses `?chunk=` and hands it to <Reader> as
  * `initialChunk`, which only overrides the STARTING position for this load —
  * the saved frontier is untouched (server-side clamped + never-regressing),
- * so this can never spoil or reset progress. A 44px-square hit box (h-11
- * w-11, flex-centered) keeps the tap target comfortable even though the
- * visible dot stays small. When the page is unknown (only possible in a
- * legacy owner/admin entry — see the DTO doc), it renders as a plain,
- * non-interactive tick, same as before.
+ * so this can never spoil or reset progress. When the page is unknown (only
+ * possible in a legacy owner/admin entry — see the DTO doc), it renders as a
+ * plain, non-interactive card.
  */
-function TimelineMarker({
+function TimelineCard({
   bookId,
   entry,
-  fraction,
-  above,
   chunkIdx,
 }: {
   bookId: string;
   entry: TimelineEntry;
-  fraction: number;
-  above: boolean;
   chunkIdx: number | null;
 }) {
-  const clickable = chunkIdx !== null;
-
-  const titleParts = [entry.label];
-  if (entry.summary) titleParts.push(entry.summary);
-  if (entry.approxPage != null) titleParts.push(`Page ${entry.approxPage}`);
-  const title = titleParts.join(" — ");
-
-  const sharedClassName =
-    "group absolute top-1/2 left-1/2 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none";
-
-  const inner = (
+  const content = (
     <>
-      <span
-        aria-hidden="true"
-        className="h-2.5 w-2.5 rounded-full bg-world-accent transition-transform duration-150 group-hover:scale-125"
-      />
-      <span
-        aria-hidden="true"
-        className={`pointer-events-none absolute left-1/2 w-24 -translate-x-1/2 truncate text-center font-ui text-[10px] text-muted-foreground ${
-          above ? "bottom-full mb-1" : "top-full mt-1"
-        }`}
-      >
-        {entry.label}
-      </span>
+      <div className="flex items-baseline justify-between gap-3">
+        <p className="font-display text-sm leading-snug text-foreground">
+          {entry.label}
+        </p>
+        {entry.approxPage != null ? (
+          <span className="shrink-0 font-ui text-[11px] text-muted-foreground tabular-nums">
+            p.{entry.approxPage}
+          </span>
+        ) : null}
+      </div>
+      {entry.summary ? (
+        <p className="mt-1 line-clamp-2 font-reading text-xs leading-relaxed text-muted-foreground">
+          {entry.summary}
+        </p>
+      ) : null}
+      {chunkIdx !== null ? (
+        <span className="mt-1.5 inline-flex items-center gap-1 font-ui text-[10px] font-medium text-world-accent">
+          Jump to page <span aria-hidden="true">→</span>
+        </span>
+      ) : null}
     </>
   );
 
-  if (clickable) {
+  if (chunkIdx !== null) {
     return (
       <Link
         href={`/books/${bookId}/read?chunk=${chunkIdx}`}
-        title={title}
         aria-label={`Jump to page ${entry.approxPage}: ${entry.label}`}
         data-sound="press"
-        className={`${sharedClassName} cursor-pointer`}
-        style={{ left: `${fraction * 100}%` }}
+        className="block rounded-md border border-world-frame bg-world-surface px-3 py-2 transition-colors hover:bg-[var(--muted)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
       >
-        {inner}
+        {content}
       </Link>
     );
   }
 
   return (
-    <div
-      className={sharedClassName}
-      style={{ left: `${fraction * 100}%` }}
-      title={title}
-    >
-      {inner}
+    <div className="rounded-md border border-world-frame bg-world-surface px-3 py-2 opacity-80">
+      {content}
     </div>
   );
 }
