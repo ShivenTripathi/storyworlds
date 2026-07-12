@@ -308,6 +308,12 @@ function BookRow({
             >
               Open
             </Link>
+            <Link
+              href={`/admin/books/${book.id}`}
+              className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Inspect →
+            </Link>
             <button
               type="button"
               onClick={handleToggle}
