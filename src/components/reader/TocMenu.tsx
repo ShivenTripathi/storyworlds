@@ -99,7 +99,7 @@ export function TocMenu({
         <div
           role="dialog"
           aria-label="Table of contents"
-          className="absolute top-full left-0 z-50 mt-2 flex max-h-[75vh] w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border shadow-xl"
+          className="absolute top-full right-0 z-50 mt-2 flex max-h-[75vh] w-80 max-w-[calc(100vw-2rem)] flex-col overflow-hidden rounded-lg border shadow-xl"
           style={{
             background: "var(--card)",
             borderColor: "var(--border)",

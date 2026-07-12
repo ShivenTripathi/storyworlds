@@ -83,8 +83,14 @@ export function buildShareUrls(props: ShareButtonProps, origin: string) {
     // Public destination: the marketing landing page funnels a new visitor
     // into sign-up/Discover (there's no unauthenticated book page yet — see
     // README "wiring" note). `ref` is just an attribution query param, not
-    // a lookup key.
-    destPath = `/?ref=share-book&book=${encodeURIComponent(props.bookId)}`;
+    // a lookup key. The same cast/total/days carried on the OG image URL
+    // above are echoed onto the destination link too, so page.tsx's
+    // generateMetadata can build the *exact* OG image the sharer saw when
+    // it points openGraph.images at this same book+params — otherwise a
+    // pasted link would unfurl a generic/zeroed card that doesn't match
+    // the "Save image" a reader already grabbed.
+    const bookQs = params.toString();
+    destPath = `/?ref=share-book&book=${encodeURIComponent(props.bookId)}${bookQs ? `&${bookQs}` : ""}`;
   } else if (props.kind === "quote") {
     const quote = props.quote.trim().slice(0, MAX_QUOTE_CHARS);
     params.set("quote", quote);

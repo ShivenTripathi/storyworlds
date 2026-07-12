@@ -43,6 +43,7 @@ export function BookCard({ book, onDelete }: BookCardProps) {
             bookId={book.id}
             title={book.title}
             author={book.author}
+            archetype={book.themeArchetype}
             coverUrl={book.coverUrl}
           />
 
@@ -82,6 +83,12 @@ export function BookCard({ book, onDelete }: BookCardProps) {
             </p>
           ) : null}
         </div>
+
+        {book.blurb ? (
+          <p className="mt-1.5 line-clamp-3 font-reading text-xs leading-relaxed text-muted-foreground">
+            {book.blurb}
+          </p>
+        ) : null}
       </Link>
 
       {/* overflow / delete affordance */}

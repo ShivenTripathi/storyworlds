@@ -16,6 +16,9 @@ import { OG_COLORS, OG_FONT_DISPLAY, OG_SIZE } from "../../_lib/theme";
  *   ?cast=<int>   — cast met, aggregate only (e.g. 8)
  *   ?total=<int>  — cast total, aggregate only (e.g. 13)
  *   ?days=<int>   — days-to-finish or reading-streak, aggregate only (e.g. 11)
+ *   ?quote=<str>  — a reader-selected passage; when present, renders a quote
+ *                   card instead of the collection-progress card (title/
+ *                   author attribution, no cast/day chips)
  *
  * These three numbers are NOT re-derived from analytics here — the in-app
  * share flow (an authenticated page) already called getBookStats/

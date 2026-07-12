@@ -251,3 +251,81 @@
   margin-top: 0.3rem;
   color: var(--foreground);
 }
+
+/* ── Discoveries/Codex glimpse ───────────────────────────────────────────
+   Mirrors src/components/codex/CodexCardTile.tsx's real card chrome (same
+   rarity palette, same aspect-[3/4] portrait plate) so this reads as the
+   actual product rather than an invented mock. See DiscoveriesGlimpse.tsx. */
+.landing-codex-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+@media (min-width: 640px) {
+  .landing-codex-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
+.landing-codex-card {
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--world-frame);
+  background: var(--card);
+  padding: 0.75rem;
+  transition: transform 250ms ease;
+}
+.landing-codex-card:hover {
+  transform: translateY(-3px);
+}
+
+.landing-codex-portrait {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  width: 100%;
+  border-radius: var(--radius-sm, 4px);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.landing-codex-name {
+  margin-top: 0.6rem;
+  font-size: 0.875rem;
+  line-height: 1.3;
+  color: var(--foreground);
+}
+.landing-codex-book {
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  color: var(--muted-foreground);
+}
+.landing-codex-rarity {
+  display: inline-block;
+  margin-top: 0.45rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 0.625rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.landing-codex-card--locked {
+  opacity: 0.85;
+}
+.landing-codex-portrait--locked {
+  background: linear-gradient(160deg, var(--ink-700), var(--ink-900));
+}
+.landing-codex-seal {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: var(--ember-700);
+  border: 1.5px solid var(--ember-500);
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-size: 16px;
+  color: var(--parchment-100);
+}

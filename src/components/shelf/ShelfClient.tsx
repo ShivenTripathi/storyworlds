@@ -15,6 +15,9 @@ export function ShelfClient() {
   const [tab, setTab] = useState<Tab>("shelf");
   const [books, setBooks] = useState<Book[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
+  // My Shelf's search is a client-side filter (small, already-fetched list —
+  // unlike Discover's server-side ILIKE over an unbounded catalog).
+  const [query, setQuery] = useState("");
   // Tracks whether the reader has deliberately picked a tab — once they
   // have, we stop auto-steering them to Discover even if the shelf is
   // (still) empty.
@@ -87,7 +90,20 @@ export function ShelfClient() {
       {tab === "shelf" ? (
         <>
           {books.length > 0 ? (
-            <div className="mb-8 flex justify-end">
+            <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <label htmlFor="shelf-search" className="sr-only">
+                  Search your shelf by title or author
+                </label>
+                <input
+                  id="shelf-search"
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search your shelf…"
+                  className="w-full max-w-xs rounded-full border border-input bg-background px-4 py-2 font-ui text-sm text-foreground outline-none focus:border-[var(--ring)]"
+                />
+              </div>
               <Link
                 href="/discoveries"
                 data-sound="tick"
@@ -99,6 +115,7 @@ export function ShelfClient() {
           ) : null}
           <MyShelf
             books={books}
+            query={query}
             loadState={loadState}
             onUploaded={handleUploaded}
             onDelete={handleDelete}
@@ -170,13 +187,25 @@ function ShelfSkeleton() {
   );
 }
 
+/** Case-insensitive substring match against title OR author. */
+function matchesQuery(book: Book, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    book.title.toLowerCase().includes(q) ||
+    (book.author?.toLowerCase().includes(q) ?? false)
+  );
+}
+
 function MyShelf({
   books,
+  query,
   loadState,
   onUploaded,
   onDelete,
 }: {
   books: Book[];
+  query: string;
   loadState: LoadState;
   onUploaded: (book: Book) => void;
   onDelete: (bookId: string) => void;
@@ -212,7 +241,21 @@ function MyShelf({
     );
   }
 
-  const inProgress = books.filter((b) => (b.progress?.currentChunk ?? 0) > 0);
+  const filtered = books.filter((b) => matchesQuery(b, query));
+
+  if (filtered.length === 0) {
+    return (
+      <div className="py-24 text-center">
+        <p role="status" className="font-ui text-sm text-muted-foreground">
+          No books match &quot;{query.trim()}&quot;.
+        </p>
+      </div>
+    );
+  }
+
+  const inProgress = filtered.filter(
+    (b) => (b.progress?.currentChunk ?? 0) > 0,
+  );
   const continueBook = inProgress.reduce<Book | null>((best, b) => {
     if (!best) return b;
     const bT = b.progress?.lastReadAt ?? "";
@@ -224,8 +267,8 @@ function MyShelf({
   }, null);
 
   const gridBooks = continueBook
-    ? books.filter((b) => b.id !== continueBook.id)
-    : books;
+    ? filtered.filter((b) => b.id !== continueBook.id)
+    : filtered;
 
   return (
     <div>
@@ -253,6 +296,8 @@ function ContinueReadingHero({ book }: { book: Book }) {
           bookId={book.id}
           title={book.title}
           author={book.author}
+          archetype={book.themeArchetype}
+          coverUrl={book.coverUrl}
         />
       </div>
 

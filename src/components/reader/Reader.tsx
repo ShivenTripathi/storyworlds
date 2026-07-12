@@ -5,13 +5,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   fetchBook,
   fetchChunk,
+  fetchToc,
   putProgress,
   progressRequest,
   ReaderApiError,
 } from "./api";
 import { ChapterPlate } from "./ChapterPlate";
 import { ReaderSettings } from "./ReaderSettings";
+import { SelectionPopover } from "./SelectionPopover";
 import { SoundscapeControl } from "./SoundscapeControl";
+import { TimeLeftIndicator } from "./TimeLeftIndicator";
+import { TocMenu } from "./TocMenu";
 import { useOverlay } from "./useOverlay";
 import {
   loadRailWidth,
@@ -28,7 +32,7 @@ import {
   themeSwatch,
   type ReaderSettingsState,
 } from "./settings";
-import type { BookSummary, ChunkPayload } from "./types";
+import type { BookSummary, ChunkPayload, TocResponse } from "./types";
 import {
   formatChunk,
   splitDropCap,
@@ -74,6 +78,12 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
   const [settings, setSettings] =
     useState<ReaderSettingsState>(DEFAULT_SETTINGS);
 
+  // Table-of-contents + per-chunk word counts, fetched once per book in the
+  // background (see the effect below) — powers both the Contents jump menu
+  // and the "time left" estimate. Null until the fetch resolves; both
+  // consumers render their loading/absent state rather than guessing.
+  const [tocData, setTocData] = useState<TocResponse | null>(null);
+
   // Only start fetching the scene overlay once this page's text has settled
   // on screen for a beat — avoids firing a request for every page flown past
   // while paging quickly.
@@ -97,6 +107,25 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
   useEffect(() => {
     saveReaderSettings(settings);
   }, [settings]);
+
+  // Background, one-shot-per-book fetch of the table of contents + per-chunk
+  // word counts (GET /api/books/{id}/toc) — best-effort: if it fails, the
+  // Contents menu shows "reading the table of contents…" indefinitely and
+  // the time-left estimate just stays hidden, neither of which blocks
+  // reading itself.
+  useEffect(() => {
+    let cancelled = false;
+    fetchToc(bookId)
+      .then((data) => {
+        if (!cancelled) setTocData(data);
+      })
+      .catch(() => {
+        // best-effort — see comment above
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
 
   // Hydrate the persisted rail width after mount — same reasoning as the
   // settings hydration above (localStorage isn't available during SSR).
@@ -134,6 +163,9 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // The reading text itself — scopes the selection-lookup popover so a
+  // selection anywhere else (header, world rail) never triggers it.
+  const proseRef = useRef<HTMLDivElement>(null);
   // Latest on-screen position + a "has unsaved turns" flag, both read by
   // flushProgress() from stale closures (unmount cleanup, pagehide) where
   // reading React state directly would be stale.
@@ -501,6 +533,12 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          <TocMenu
+            chapters={tocData?.chapters ?? null}
+            currentChunk={currentChunk}
+            totalChunks={totalChunks}
+            onNavigate={navigate}
+          />
           <button
             type="button"
             aria-label="Toggle story world panel"
@@ -609,15 +647,18 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
                 <ChapterPlate overlay={overlayState.overlay} />
               ) : null}
               <div
+                ref={proseRef}
                 style={{
                   fontSize: `${settings.fontSize}px`,
                   lineHeight: settings.lineHeight,
                 }}
-                className={
-                  useSpread
-                    ? "reader-prose reader-prose--spread"
-                    : "reader-prose"
-                }
+                className={[
+                  "reader-prose",
+                  useSpread ? "reader-prose--spread" : "",
+                  settings.justify ? "reader-prose--justify" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
               >
                 {blocks.map((block, i) => (
                   <ReaderBlock key={i} block={block} />
@@ -627,6 +668,23 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
           )}
         </div>
       </main>
+
+      {/* Footer: unobtrusive time-left estimate — fades with the rest of the
+          chrome, sits just above the progress filament below. */}
+      <div
+        className={`fixed inset-x-0 bottom-[10px] z-40 flex justify-center px-4 transition-[opacity,transform] duration-300 motion-reduce:transition-none ${
+          chromeVisible
+            ? "translate-y-0 opacity-100"
+            : "pointer-events-none translate-y-2 opacity-0"
+        }`}
+      >
+        <TimeLeftIndicator
+          currentChunk={currentChunk}
+          totalChunks={totalChunks}
+          chapters={tocData?.chapters ?? null}
+          wordCounts={tocData?.wordCounts ?? null}
+        />
+      </div>
 
       {/* Progress filament */}
       <div
@@ -641,6 +699,17 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
           }}
         />
       </div>
+
+      {chunkData ? (
+        <SelectionPopover
+          key={currentChunk}
+          textContainerRef={proseRef}
+          scrollContainerRef={containerRef}
+          bookId={bookId}
+          bookTitle={book?.title ?? ""}
+          bookAuthor={book?.author}
+        />
+      ) : null}
 
       <WorldRail
         bookId={bookId}

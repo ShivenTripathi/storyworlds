@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, chunks, purchases, readingProgress } from "@/db/schema";
 import { ApiError } from "@/lib/errors";
@@ -582,14 +582,61 @@ export async function setVisibility(
   return book;
 }
 
-/** All published books, newest first. No owner emails — title/author only. */
-export async function listPublished() {
+export interface ListPublishedOptions {
+  /** Case-insensitive substring match against title OR author. */
+  q?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface ListPublishedResult {
+  books: (typeof books.$inferSelect)[];
+  /** True when more rows exist beyond this page (offset + books.length). */
+  hasMore: boolean;
+}
+
+const DEFAULT_PUBLISHED_PAGE_SIZE = 24;
+const MAX_PUBLISHED_PAGE_SIZE = 60;
+
+/**
+ * Published books, newest first — the Discover feed. The catalog is
+ * intentionally unbounded (self-draining Gutenberg ingestion keeps adding to
+ * it), so this always pages via limit/offset rather than returning every
+ * published book at once, and optionally filters to a case-insensitive
+ * title/author substring search. No owner emails — title/author only.
+ */
+export async function listPublished(
+  opts: ListPublishedOptions = {},
+): Promise<ListPublishedResult> {
   await dbReady;
-  return db
+
+  const limit = Math.min(
+    Math.max(1, opts.limit ?? DEFAULT_PUBLISHED_PAGE_SIZE),
+    MAX_PUBLISHED_PAGE_SIZE,
+  );
+  const offset = Math.max(0, opts.offset ?? 0);
+
+  const conditions = [eq(books.visibility, "published")];
+  const q = opts.q?.trim();
+  if (q) {
+    const pattern = `%${q}%`;
+    conditions.push(
+      or(ilike(books.title, pattern), ilike(books.author, pattern))!,
+    );
+  }
+
+  // Fetch one extra row to cheaply detect "more pages exist" without a
+  // separate COUNT query.
+  const rows = await db
     .select()
     .from(books)
-    .where(eq(books.visibility, "published"))
-    .orderBy(desc(books.createdAt));
+    .where(and(...conditions))
+    .orderBy(desc(books.createdAt))
+    .limit(limit + 1)
+    .offset(offset);
+
+  const hasMore = rows.length > limit;
+  return { books: hasMore ? rows.slice(0, limit) : rows, hasMore };
 }
 
 /**
@@ -620,6 +667,26 @@ export async function addToLibrary(userId: string, bookId: string) {
   return book;
 }
 
+/**
+ * Detaches a published book from a reader's library — the inverse of
+ * `addToLibrary`. Deletes ONLY the reader's `purchases` row; the shared book
+ * (and every other reader's library entry for it) is untouched, since the
+ * book isn't theirs to delete. Returns whether a row was actually removed
+ * (false if the book wasn't on their shelf via the library, e.g. they own it
+ * instead — callers should route ownership-based removal to `deleteBook`).
+ */
+export async function removeFromLibrary(
+  userId: string,
+  bookId: string,
+): Promise<boolean> {
+  await dbReady;
+  const deleted = await db
+    .delete(purchases)
+    .where(and(eq(purchases.userId, userId), eq(purchases.bookId, bookId)))
+    .returning();
+  return deleted.length > 0;
+}
+
 export async function getBook(bookId: string) {
   await dbReady;
   const [book] = await db
@@ -645,6 +712,16 @@ export async function getProgress(userId: string, bookId: string) {
   return row;
 }
 
+/**
+ * Permanently deletes a book (and cascades away chunks, progress, chat,
+ * purchases, analysis — see the FK `onDelete: "cascade"` chain in
+ * db/schema.ts) plus its stored source/cover blobs. This is destructive for
+ * EVERYONE who has the book on their shelf, including other readers' library
+ * entries — reserve it for the book's owner (or an admin takedown). A reader
+ * who merely added someone else's published book to their library should be
+ * routed to `removeFromLibrary` instead (see the DELETE
+ * /api/books/[bookId] route, which picks between the two by ownership).
+ */
 export async function deleteBook(bookId: string) {
   await dbReady;
   await db.delete(books).where(eq(books.id, bookId)); // cascades to children
