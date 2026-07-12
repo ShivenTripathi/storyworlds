@@ -24,7 +24,13 @@ import {
 // GEMINI_FREE_TIER_RPD rather than imported — analytics.ts is owned by a
 // parallel workstream on this branch, so this module stays decoupled from
 // it (same value, same source of truth in CLAUDE.md).
-const GEMINI_FREE_TIER_RPD = 1500;
+// The `gemini-*-flash-lite-latest` alias currently resolves to
+// gemini-3.1-flash-lite, whose free-tier cap is 500 requests/day (NOT the 1500
+// we assumed — a 429 storm proved it: "limit: 500, model:
+// gemini-3.1-flash-lite"). Interactive traffic (chat, on-read illustrations)
+// shares this budget, so the background sweepers must pace against the real
+// number and leave generous headroom.
+const GEMINI_FREE_TIER_RPD = 500;
 
 /**
  * Below this remaining-headroom percentage, the sweepers skip their tick
@@ -33,6 +39,10 @@ const GEMINI_FREE_TIER_RPD = 1500;
  * overlays) so leaving a safety margin instead of pacing to exactly 0%
  * avoids the sweepers eating the last few percent readers might need.
  */
+// Founder's split of the 500/day budget: reserve ~50 requests for interactive
+// traffic (chat + on-read illustrations, which never check this gate and so
+// always have that slice available), and let background sweepers use the
+// other ~450. So the sweepers stop once less than 10% (~50) remains.
 export const HEADROOM_SKIP_THRESHOLD_PCT = 10;
 
 function startOfUtcDay(d: Date): Date {

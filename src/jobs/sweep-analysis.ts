@@ -1,4 +1,4 @@
-import { and, isNull, lt, ne, or, eq, inArray, sql } from "drizzle-orm";
+import { and, isNull, lt, ne, or, eq, inArray } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, jobs, worldReferences } from "@/db/schema";
 import {
@@ -6,7 +6,6 @@ import {
   isHeadroomTooLow,
   isReaderActive,
 } from "@/services/queue";
-import { PIPELINE_VERSION } from "./analyze-book";
 import {
   selectNextBookForAnalysis,
   type AnalysisCandidateInput,
@@ -66,11 +65,12 @@ const QUEUED_STALL_MS = 10 * 60 * 1000;
 async function loadAnalysisCandidates(): Promise<AnalysisCandidateInput[]> {
   await dbReady;
 
-  const stalePipeline = sql`(
-    ${worldReferences.modelVersions} ->> 'pipeline' is null
-    or (${worldReferences.modelVersions} ->> 'pipeline')::int < ${PIPELINE_VERSION}
-  )`;
-
+  // Only NEVER-successfully-analyzed books. The stale-pipeline re-analysis
+  // backfill was DISABLED after it caused a 429 storm: with only ~500
+  // requests/day (see queue.ts) and one book costing ~15+ calls, auto
+  // re-analyzing the whole corpus is unaffordable and starves everything
+  // else. Stale worlds (analyzed before the page-anchor fix) are re-analyzed
+  // on demand via the admin Retry button instead, one at a time.
   const candidateBooks = await db
     .select({
       bookId: books.id,
@@ -88,7 +88,6 @@ async function loadAnalysisCandidates(): Promise<AnalysisCandidateInput[]> {
         or(
           isNull(worldReferences.bookId),
           ne(worldReferences.status, "completed"),
-          and(eq(worldReferences.status, "completed"), stalePipeline),
         ),
       ),
     );

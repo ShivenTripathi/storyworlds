@@ -539,7 +539,9 @@ export async function getCodexForBook(
 
 // Google AI Studio free-tier daily request cap (see CLAUDE.md ZERO-COST
 // CONSTRAINT) — the denominator for the free-tier headroom estimate below.
-const GEMINI_FREE_TIER_RPD = 1500;
+// Real free-tier cap for the flash-lite-latest alias (gemini-3.1-flash-lite):
+// 500 req/day, not 1500 (see src/services/queue.ts).
+const GEMINI_FREE_TIER_RPD = 500;
 
 export interface CostByBookDay {
   bookId: string | null;
