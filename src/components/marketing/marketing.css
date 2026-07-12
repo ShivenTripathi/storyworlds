@@ -1,0 +1,235 @@
+/* ============================================================
+   Landing-page-only styles.
+   Everything here is scoped under `.landing-*` class names so it
+   cannot leak into the reader, world UI, or any other surface.
+   Uses only tokens already defined in globals.css / archetypes.css —
+   no new colors are introduced here.
+   ============================================================ */
+
+/* ── Sticky marketing header ───────────────────────────────────────────── */
+.landing-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  border-bottom: 1px solid transparent;
+  background: color-mix(in srgb, var(--background) 0%, transparent);
+  transition:
+    background-color 300ms ease,
+    border-color 300ms ease,
+    box-shadow 300ms ease;
+}
+.landing-header[data-scrolled="true"] {
+  border-bottom-color: var(--border);
+  background: color-mix(in srgb, var(--background) 82%, transparent);
+  box-shadow: 0 8px 24px -20px rgba(0, 0, 0, 0.5);
+}
+@supports (backdrop-filter: blur(1px)) {
+  .landing-header[data-scrolled="true"] {
+    backdrop-filter: blur(10px);
+  }
+}
+
+.landing-header__inner {
+  margin-inline: auto;
+  width: 100%;
+  max-width: 72rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1.5rem;
+}
+
+.landing-header__wordmark {
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  color: var(--foreground);
+  text-decoration: none;
+}
+
+.landing-header__nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.landing-header__link {
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+  text-decoration: none;
+  transition: color 150ms ease;
+}
+.landing-header__link:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+/* Slim the reused AuthCta button down for the header context only. */
+.landing-header__cta button,
+.landing-header__cta a {
+  padding: 0.5rem 1.1rem;
+  font-size: 0.8125rem;
+}
+
+/* ── Scroll-triggered reveal (generic, used by ScrollReveal.tsx) ───────── */
+.landing-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition:
+    opacity 550ms cubic-bezier(0.2, 0.7, 0.2, 1),
+    transform 550ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  will-change: opacity, transform;
+}
+.landing-reveal--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .landing-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+}
+
+/* ── Hero: lamplit glow behind the illuminated page ─────────────────────── */
+.landing-hero-glow {
+  position: absolute;
+  inset: -8% -12%;
+  z-index: -1;
+  background: radial-gradient(
+    60% 55% at 62% 38%,
+    color-mix(in srgb, var(--world-accent) 22%, transparent),
+    transparent 72%
+  );
+  filter: blur(28px);
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .landing-hero-glow {
+    animation: landing-glow-breathe 9s ease-in-out infinite;
+  }
+}
+@keyframes landing-glow-breathe {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A gentle, slow drift on the margin plates — layered on top of the existing
+   plate-reveal entrance animation from globals.css. Opt-in only: base state
+   (no-js, or reduced motion) is the static, already-settled plate. */
+@media (prefers-reduced-motion: no-preference) {
+  .illuminated .plate.landing-plate--drift {
+    animation:
+      plate-reveal 620ms cubic-bezier(0.2, 0.7, 0.2, 1) both,
+      landing-plate-drift 7s ease-in-out 1.6s infinite;
+  }
+}
+@keyframes landing-plate-drift {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+/* Second marginalia: a small place/timeline note pinned near the folio. */
+.illuminated .plate-note::after {
+  display: none;
+}
+.illuminated .plate-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  position: absolute;
+  top: -0.6rem;
+  right: 1.5rem;
+  width: auto;
+  padding: 0.4rem 0.7rem;
+  animation-delay: 1120ms;
+}
+.illuminated .plate-note-glyph {
+  color: var(--world-accent);
+  font-size: 11px;
+  line-height: 1;
+}
+.illuminated .plate-note-text {
+  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  font-size: 10.5px;
+  letter-spacing: 0.03em;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .illuminated .plate-note {
+    position: static;
+    margin: 0.75rem 0 0;
+    width: fit-content;
+  }
+}
+
+/* ── World archetypes strip ─────────────────────────────────────────────── */
+.landing-worlds-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+@media (min-width: 640px) {
+  .landing-worlds-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .landing-worlds-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+.landing-world-card {
+  position: relative;
+  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--world-frame);
+  background: var(--world-surface);
+  padding: 1rem 0.9rem 0.9rem;
+  overflow: hidden;
+  transition: transform 250ms ease;
+}
+.landing-world-card:hover {
+  transform: translateY(-3px);
+}
+.landing-world-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: var(--world-accent);
+}
+.landing-world-swatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 999px;
+  background: var(--world-accent);
+  margin-bottom: 0.85rem;
+}
+.landing-world-archetype {
+  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.landing-world-title {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-size: 1rem;
+  line-height: 1.25;
+  margin-top: 0.3rem;
+  color: var(--foreground);
+}

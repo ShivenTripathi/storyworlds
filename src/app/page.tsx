@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
+import "@/components/marketing/marketing.css";
+import { MarketingHeader } from "@/components/marketing/MarketingHeader";
 import { HeroIlluminatedPage } from "@/components/marketing/HeroIlluminatedPage";
 import { HowItWorks } from "@/components/marketing/HowItWorks";
 import { Manifesto } from "@/components/marketing/Manifesto";
+import { WorldArchetypes } from "@/components/marketing/WorldArchetypes";
 import { SpoilerSafetyStrip } from "@/components/marketing/SpoilerSafetyStrip";
+import { ClosingCta } from "@/components/marketing/ClosingCta";
 import { MarketingFooter } from "@/components/marketing/MarketingFooter";
 
 export const metadata: Metadata = {
@@ -19,12 +23,17 @@ export const metadata: Metadata = {
 
 export default function Home() {
   return (
-    <main className="flex flex-1 flex-col">
-      <HeroIlluminatedPage />
-      <HowItWorks />
-      <Manifesto />
-      <SpoilerSafetyStrip />
-      <MarketingFooter />
-    </main>
+    <>
+      <MarketingHeader />
+      <main className="flex flex-1 flex-col">
+        <HeroIlluminatedPage />
+        <HowItWorks />
+        <Manifesto />
+        <WorldArchetypes />
+        <SpoilerSafetyStrip />
+        <ClosingCta />
+        <MarketingFooter />
+      </main>
+    </>
   );
 }
