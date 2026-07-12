@@ -25,7 +25,10 @@ export default function Home() {
   return (
     <>
       <MarketingHeader />
-      <main className="flex flex-1 flex-col">
+      {/* overflow-x-clip contains the hero's decorative bleed (glow / rotated
+          page) so it never triggers horizontal body scroll on phones. The
+          sticky header is a sibling, so its stickiness is unaffected. */}
+      <main className="flex flex-1 flex-col overflow-x-clip">
         <HeroIlluminatedPage />
         <HowItWorks />
         <Manifesto />

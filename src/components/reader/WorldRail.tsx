@@ -197,7 +197,7 @@ export function WorldRail({
       aria-label="Story world"
       aria-hidden={!open}
       inert={!open ? true : undefined}
-      className={`fixed inset-x-0 bottom-0 z-50 h-[60vh] overflow-y-auto rounded-t-lg border-t transition-transform duration-[250ms] ease-out focus:outline-none motion-reduce:transition-none md:inset-y-0 md:right-0 md:left-auto md:h-full md:w-[340px] md:rounded-none md:border-t-0 md:border-l ${
+      className={`fixed inset-x-0 bottom-0 z-50 flex h-[72dvh] max-h-[72dvh] flex-col rounded-t-lg border-t transition-transform duration-[250ms] ease-out focus:outline-none motion-reduce:transition-none md:inset-y-0 md:right-0 md:left-auto md:h-full md:max-h-none md:w-[340px] md:rounded-none md:border-t-0 md:border-l ${
         open
           ? "translate-y-0 md:translate-x-0"
           : "translate-y-full md:translate-x-full md:translate-y-0"
@@ -212,14 +212,22 @@ export function WorldRail({
         color: "var(--foreground)",
       }}
     >
-      <div className="flex items-center justify-between px-4 py-3">
+      {/* Grab handle — a touch affordance that this bottom sheet is dismissible. */}
+      <div className="flex shrink-0 justify-center pt-2 md:hidden" aria-hidden>
+        <span
+          className="h-1 w-9 rounded-full opacity-40"
+          style={{ background: "var(--world-frame)" }}
+        />
+      </div>
+
+      <div className="flex shrink-0 items-center justify-between px-4 py-2 md:py-3">
         <p className="eyebrow">THE WORLD</p>
         <button
           type="button"
           aria-label="Close world panel"
           onClick={onClose}
           tabIndex={open ? 0 : -1}
-          className="flex h-11 w-11 items-center justify-center rounded-full text-lg opacity-70 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+          className="flex h-11 w-11 items-center justify-center rounded-full text-xl opacity-70 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
         >
           ×
         </button>
@@ -229,7 +237,7 @@ export function WorldRail({
         <div
           role="tablist"
           aria-label="World panel sections"
-          className="flex items-center gap-4 border-b px-4 pb-2"
+          className="flex shrink-0 items-center gap-4 border-b px-4 pb-2"
           style={{ borderColor: "var(--world-frame)" }}
         >
           {RAIL_TABS.map((t) => (
@@ -244,7 +252,13 @@ export function WorldRail({
         </div>
       ) : null}
 
-      <div className="px-4 pt-4 pb-8">
+      <div
+        className={
+          activeTabDef?.layout === "fill" && loaded && railCtx
+            ? "flex min-h-0 flex-1 flex-col px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+            : "min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-[max(2rem,env(safe-area-inset-bottom))]"
+        }
+      >
         {!loaded ? (
           <p className="font-ui text-sm text-muted-foreground">
             Opening the world…
@@ -256,7 +270,7 @@ export function WorldRail({
             aria-labelledby={`world-tab-${tab}`}
             className={
               activeTabDef?.layout === "fill"
-                ? "flex h-[calc(60vh-96px)] flex-col outline-none md:h-[calc(100vh-96px)]"
+                ? "flex min-h-0 flex-1 flex-col outline-none"
                 : "space-y-6 outline-none"
             }
           >
@@ -376,15 +390,15 @@ function ChatTab({
       );
     }
     return (
-      <div className="space-y-1">
-        <p className="eyebrow mb-2">WHO WOULD YOU LIKE TO TALK TO?</p>
-        <ul className="space-y-1">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <p className="eyebrow mb-2 shrink-0">WHO WOULD YOU LIKE TO TALK TO?</p>
+        <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto">
           {characters.map((entity) => (
             <li key={entity.id}>
               <button
                 type="button"
                 onClick={() => onSelect(entity.id)}
-                className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-2 py-2 text-left hover:bg-[var(--muted)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+                className="flex min-h-11 w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-2 py-2 text-left hover:bg-[var(--muted)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
               >
                 <span
                   className="min-w-0 flex-1 font-display text-base break-words"

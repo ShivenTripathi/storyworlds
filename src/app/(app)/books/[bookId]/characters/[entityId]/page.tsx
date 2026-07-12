@@ -129,7 +129,9 @@ export default function CharacterDossierPage({
       <div className="mt-10 grid items-start gap-10 md:grid-cols-[300px_1fr]">
         {/* ── Visual + ledger ─────────────────────────────────────────── */}
         <aside className="space-y-8">
-          <PortraitPlate visual={visual} name={entity.name} />
+          <div className="mx-auto w-full max-w-[220px] md:max-w-none">
+            <PortraitPlate visual={visual} name={entity.name} />
+          </div>
 
           {entity.visualDescription ? (
             <section>
@@ -250,7 +252,7 @@ export default function CharacterDossierPage({
         >
           <p className="eyebrow mb-4">A CONVERSATION</p>
           <div
-            className="h-[520px] rounded-md border p-4"
+            className="h-[75dvh] max-h-[560px] min-h-[420px] rounded-md border p-4"
             style={{
               borderColor: "var(--world-frame)",
               background: "var(--world-surface)",

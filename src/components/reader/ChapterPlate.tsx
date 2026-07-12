@@ -39,7 +39,7 @@ export function ChapterPlate({ overlay }: ChapterPlateProps) {
             src={overlay.imageUrl}
             alt={firstSentence(overlay.sceneDescription)}
             onLoad={() => setLoaded(true)}
-            className={`max-h-[420px] w-full rounded-sm object-cover transition-opacity duration-300 motion-reduce:transition-none ${
+            className={`max-h-[300px] w-full rounded-sm object-cover transition-opacity duration-300 motion-reduce:transition-none sm:max-h-[420px] ${
               loaded ? "opacity-100" : "opacity-0"
             }`}
           />

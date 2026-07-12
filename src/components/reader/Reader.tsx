@@ -352,6 +352,15 @@ export function Reader({ bookId }: ReaderProps) {
   );
 
   const isEmptyChunk = chunkData != null && blocks.length === 0;
+
+  // Two-column "spread" only kicks in when the page actually has enough text
+  // to fill both columns — otherwise a short chunk balances into two
+  // half-empty columns with a big blank gutter. Below the threshold we fall
+  // back to a single column so it always reads like a real page.
+  const SPREAD_MIN_CHARS = 1200;
+  const useSpread =
+    settings.pageView === "spread" &&
+    (chunkData?.text.length ?? 0) >= SPREAD_MIN_CHARS;
   const pageLabel =
     chunkData && totalChunks
       ? `Page ${currentChunk + 1} of ${totalChunks} · ${Math.round(
@@ -394,7 +403,7 @@ export function Reader({ bookId }: ReaderProps) {
     <div
       ref={containerRef}
       data-world-theme={book?.themeArchetype ?? undefined}
-      className="fixed inset-0 z-30 overflow-y-auto"
+      className="fixed inset-0 z-30 overflow-x-hidden overflow-y-auto"
       style={
         {
           "--reader-bg": theme.bg,
@@ -452,7 +461,7 @@ export function Reader({ bookId }: ReaderProps) {
             aria-label="Toggle story world panel"
             aria-pressed={railOpen}
             onClick={() => setRailOpen((v) => !v)}
-            className="flex h-9 min-w-9 items-center justify-center rounded-full border px-3 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+            className="flex h-11 min-w-11 items-center justify-center rounded-full border px-3.5 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
             style={{
               background: "var(--card)",
               borderColor: "var(--border)",
@@ -465,30 +474,25 @@ export function Reader({ bookId }: ReaderProps) {
         </div>
       </header>
 
-      {/* Mobile floating cluster (shown when chrome is hidden) */}
-      <div
-        className={`fixed right-4 bottom-6 z-40 transition-[opacity,transform] duration-300 motion-reduce:transition-none sm:hidden ${
-          chromeVisible
-            ? "pointer-events-none translate-y-2 opacity-0"
-            : "translate-y-0 opacity-100"
-        }`}
-      >
-        <ReaderSettings settings={settings} onChange={setSettings} compact />
-      </div>
-
-      {/* Click zones */}
+      {/* Page-turn tap zones. Chevrons are a persistent affordance whenever the
+          chrome is visible (so touch users — who have no hover — always see
+          them), and additionally brighten on hover for pointer users. The
+          zones are narrow on phones and sit inside the reading column's side
+          padding so they never eat the text. */}
       <button
         type="button"
         aria-label="Previous page"
         onClick={goPrev}
-        className="group fixed top-0 left-0 z-20 flex h-full w-[14%] max-w-16 items-center justify-start pl-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none focus-visible:ring-inset"
+        className="group fixed top-0 left-0 z-20 flex h-full w-11 items-center justify-start pl-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none focus-visible:ring-inset sm:w-[12%] sm:max-w-16"
       >
         <svg
-          width="20"
-          height="20"
+          width="22"
+          height="22"
           viewBox="0 0 16 16"
           fill="none"
-          className="opacity-0 transition-opacity duration-150 group-hover:opacity-40"
+          className={`transition-opacity duration-200 group-hover:opacity-60 ${
+            chromeVisible ? "opacity-35" : "opacity-0"
+          }`}
           aria-hidden="true"
         >
           <path
@@ -504,14 +508,16 @@ export function Reader({ bookId }: ReaderProps) {
         type="button"
         aria-label="Next page"
         onClick={goNext}
-        className="group fixed top-0 right-0 z-20 flex h-full w-[14%] max-w-16 items-center justify-end pr-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none focus-visible:ring-inset"
+        className="group fixed top-0 right-0 z-20 flex h-full w-11 items-center justify-end pr-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none focus-visible:ring-inset sm:w-[12%] sm:max-w-16"
       >
         <svg
-          width="20"
-          height="20"
+          width="22"
+          height="22"
           viewBox="0 0 16 16"
           fill="none"
-          className="opacity-0 transition-opacity duration-150 group-hover:opacity-40"
+          className={`transition-opacity duration-200 group-hover:opacity-60 ${
+            chromeVisible ? "opacity-35" : "opacity-0"
+          }`}
           aria-hidden="true"
         >
           <path
@@ -526,7 +532,7 @@ export function Reader({ bookId }: ReaderProps) {
 
       {/* Text column */}
       <main
-        className={`relative z-10 mx-auto min-h-full px-6 pt-24 pb-20 transition-[padding] duration-300 motion-reduce:transition-none ${
+        className={`relative z-10 mx-auto min-h-full px-12 pt-24 pb-20 transition-[padding] duration-300 motion-reduce:transition-none sm:px-6 ${
           railOpen ? "md:pr-[340px]" : ""
         }`}
       >
@@ -535,8 +541,7 @@ export function Reader({ bookId }: ReaderProps) {
           style={{
             // A spread flows into two columns, so it needs ~2× the single-page
             // measure plus a gutter.
-            maxWidth:
-              settings.pageView === "spread" ? `${ch * 2 + 8}ch` : `${ch}ch`,
+            maxWidth: useSpread ? `${ch * 2 + 8}ch` : `${ch}ch`,
             fontFamily: family,
           }}
         >
@@ -559,7 +564,7 @@ export function Reader({ bookId }: ReaderProps) {
                   lineHeight: settings.lineHeight,
                 }}
                 className={
-                  settings.pageView === "spread"
+                  useSpread
                     ? "reader-prose reader-prose--spread"
                     : "reader-prose"
                 }

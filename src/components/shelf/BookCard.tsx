@@ -94,7 +94,7 @@ export function BookCard({ book, onDelete }: BookCardProps) {
               e.stopPropagation();
               setMenu("open");
             }}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--ink-950)]/60 font-ui text-base text-[var(--parchment-100)] opacity-70 transition-opacity duration-200 group-hover:opacity-100 hover:bg-[var(--ink-950)]/80 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--ink-950)]/60 font-ui text-base text-[var(--parchment-100)] opacity-80 transition-opacity duration-200 group-hover:opacity-100 hover:bg-[var(--ink-950)]/80 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
           >
             ⋯
           </button>

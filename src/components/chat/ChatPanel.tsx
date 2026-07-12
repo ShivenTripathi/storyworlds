@@ -321,14 +321,14 @@ export function ChatPanel({
             onKeyDown={handleKeyDown}
             rows={1}
             placeholder={`Say something to ${entityName}…`}
-            className="min-h-9 flex-1 resize-none rounded-md border bg-transparent px-3 py-2 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+            className="min-h-11 flex-1 resize-none rounded-md border bg-transparent px-3 py-2.5 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
             style={{ borderColor: "var(--world-frame)" }}
           />
           <button
             type="submit"
             disabled={sending || !input.trim()}
             aria-label="Send message"
-            className="flex h-9 items-center justify-center rounded-full bg-[var(--world-accent)] px-4 font-ui text-xs font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="flex h-11 items-center justify-center rounded-full bg-[var(--world-accent)] px-4 font-ui text-xs font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             Send
           </button>

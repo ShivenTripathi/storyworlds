@@ -64,7 +64,7 @@ export function ReaderSettings({
         className={
           compact
             ? "flex h-11 w-11 items-center justify-center rounded-full border font-display text-base shadow-lg backdrop-blur focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
-            : "flex h-9 min-w-9 items-center justify-center rounded-full border px-3 font-display text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+            : "flex h-11 min-w-11 items-center justify-center rounded-full border px-3.5 font-display text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
         }
         style={{
           background: "var(--card)",
@@ -79,7 +79,7 @@ export function ReaderSettings({
         <div
           role="dialog"
           aria-label="Reading settings"
-          className="absolute top-full right-0 z-50 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-lg border p-4 shadow-xl"
+          className="absolute top-full right-0 z-50 mt-2 max-h-[75vh] w-72 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-lg border p-4 shadow-xl"
           style={{
             background: "var(--card)",
             borderColor: "var(--border)",

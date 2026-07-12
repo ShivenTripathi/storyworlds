@@ -571,3 +571,41 @@ h6 {
     column-rule: none;
   }
 }
+
+/* ── Scene description reveal (world rail "Scene" tab) ───────────────────────
+   The illustration is primary; its prose description collapses behind a
+   reveal affordance. On hover-capable pointers it opens on hover of the
+   figure; on touch (and for keyboard users) the toggle button drives it via
+   [data-open]. Animated with max-height so it reads as a gentle unfurl. */
+.scene-reveal {
+  overflow: hidden;
+  max-height: 0;
+  opacity: 0;
+  transition:
+    max-height 300ms ease,
+    opacity 200ms ease;
+}
+.scene-reveal[data-open="true"] {
+  max-height: 60rem;
+  opacity: 1;
+}
+@media (hover: hover) and (pointer: fine) {
+  .scene-figure:hover .scene-reveal,
+  .scene-figure:focus-within .scene-reveal {
+    max-height: 60rem;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .scene-reveal {
+    transition: none;
+  }
+}
+/* The reveal chevron points down when closed, up when open. */
+.scene-reveal-chevron {
+  transition: transform 200ms ease;
+}
+[data-open="true"] > .scene-reveal-chevron,
+.scene-reveal-toggle[aria-expanded="true"] .scene-reveal-chevron {
+  transform: rotate(180deg);
+}

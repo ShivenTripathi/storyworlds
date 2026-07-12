@@ -59,17 +59,17 @@ export function AppHeader() {
         Skip to content
       </a>
 
-      <header className="flex items-center justify-between border-b border-border px-6 py-4">
-        <div className="flex items-center gap-8">
+      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-6">
+        <div className="flex min-w-0 items-center gap-4 sm:gap-8">
           <Link
             href="/shelf"
-            className="rounded-md font-display text-lg tracking-tight focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+            className="shrink-0 rounded-md font-display text-base tracking-tight focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none sm:text-lg"
           >
             Story Worlds
           </Link>
 
-          <nav aria-label="Primary">
-            <ul className="flex items-center gap-6">
+          <nav aria-label="Primary" className="min-w-0">
+            <ul className="flex items-center gap-4 sm:gap-6">
               {links.map((link) => {
                 const active =
                   pathname === link.href ||

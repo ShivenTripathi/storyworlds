@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { useOverlay, type OverlayState } from "@/components/reader/useOverlay";
 
 interface SceneViewProps {
@@ -36,12 +36,16 @@ export function SceneView({
   const state = preloaded ?? ownOverlay.state;
   const retry = preloaded ? undefined : ownOverlay.retry;
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [descOpen, setDescOpen] = useState(false);
+  const descId = useId();
 
   useEffect(() => {
-    // Deliberate reset of a UI-only state when the page changes, not a
+    // Deliberate reset of UI-only state when the page changes, not a
     // derivation of props/state already in React.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    /* eslint-disable react-hooks/set-state-in-effect */
     setLightboxOpen(false);
+    setDescOpen(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [chunkIdx]);
 
   if (state.status === "idle" || state.status === "unavailable") {
@@ -88,33 +92,72 @@ export function SceneView({
 
   return (
     <div className="space-y-5">
-      {overlay.imageUrl ? (
-        <figure>
-          <button
-            type="button"
-            onClick={() => setLightboxOpen(true)}
-            aria-label="View illustration larger"
-            className="block w-full overflow-hidden rounded-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
-            style={{ border: "1px solid var(--world-frame)" }}
-          >
-            {/* eslint-disable-next-line @next/next/no-img-element -- dynamic overlay images */}
-            <img
-              src={overlay.imageUrl}
-              alt={overlay.sceneDescription}
-              className="aspect-[4/3] w-full object-cover"
-            />
-          </button>
-          {overlay.imageIsForwardFill ? (
-            <figcaption className="eyebrow mt-1.5">
-              FROM AN EARLIER SCENE
-            </figcaption>
-          ) : null}
-        </figure>
-      ) : null}
+      {/* The illustration is primary; its prose description reveals on hover
+          (desktop) or tap of the toggle (touch/keyboard). */}
+      <div className="scene-figure">
+        {overlay.imageUrl ? (
+          <figure className="mb-2">
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(true)}
+              aria-label="View illustration larger"
+              className="block w-full overflow-hidden rounded-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+              style={{ border: "1px solid var(--world-frame)" }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element -- dynamic overlay images */}
+              <img
+                src={overlay.imageUrl}
+                alt={overlay.sceneDescription}
+                className="aspect-[4/3] w-full object-cover"
+              />
+            </button>
+            {overlay.imageIsForwardFill ? (
+              <figcaption className="eyebrow mt-1.5">
+                FROM AN EARLIER SCENE
+              </figcaption>
+            ) : null}
+          </figure>
+        ) : null}
 
-      <p className="font-reading text-sm leading-relaxed">
-        {overlay.sceneDescription}
-      </p>
+        {overlay.sceneDescription ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setDescOpen((v) => !v)}
+              aria-expanded={descOpen}
+              aria-controls={descId}
+              className="scene-reveal-toggle flex min-h-11 w-full items-center justify-between gap-2 rounded-md py-1.5 text-left font-ui text-xs text-muted-foreground focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+            >
+              <span className="eyebrow">DESCRIBE THIS SCENE</span>
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 16 16"
+                fill="none"
+                aria-hidden="true"
+                className="scene-reveal-chevron shrink-0 opacity-70"
+              >
+                <path
+                  d="M4 6l4 4 4-4"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <div
+              id={descId}
+              className="scene-reveal"
+              data-open={descOpen ? "true" : "false"}
+            >
+              <p className="pt-1 font-reading text-sm leading-relaxed">
+                {overlay.sceneDescription}
+              </p>
+            </div>
+          </>
+        ) : null}
+      </div>
 
       {overlay.activeEntities.length > 0 ? (
         <section>
