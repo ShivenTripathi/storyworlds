@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ClerkProvider } from "@clerk/nextjs";
 import { fraunces, literata, instrumentSans } from "@/theme/fonts";
+import { SoundProvider } from "@/components/sound/SoundProvider";
 import "./globals.css";
 import "@/theme/archetypes.css";
 
@@ -22,7 +23,8 @@ export default function RootLayout({
         suppressHydrationWarning
         className={`${fraunces.variable} ${literata.variable} ${instrumentSans.variable} h-full antialiased`}
       >
-        <body className="min-h-full flex flex-col bg-[var(--bg)] text-[var(--fg)] font-ui">
+        <body className="flex min-h-full flex-col bg-[var(--background)] font-ui text-[var(--foreground)]">
+          <SoundProvider />
           {children}
         </body>
       </html>

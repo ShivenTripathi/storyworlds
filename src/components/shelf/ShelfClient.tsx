@@ -116,6 +116,7 @@ function TabButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
+      data-sound="tick"
       className="eyebrow rounded-md border-b-2 pb-1 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
       style={{
         borderColor: active

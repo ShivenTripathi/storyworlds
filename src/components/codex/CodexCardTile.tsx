@@ -89,6 +89,7 @@ function RevealedTile({
 
   const body = (
     <div
+      data-sound-hover={isLegendary ? "sparkle" : undefined}
       className="relative flex flex-col gap-2 overflow-hidden rounded-lg border p-3 transition-colors"
       style={{ borderColor: rarity.color, background: "var(--card)" }}
     >
@@ -162,6 +163,7 @@ function RevealedTile({
     return (
       <Link
         href={`/books/${bookId}/characters/${encodeURIComponent(card.id)}`}
+        data-sound="bloom"
         className="block min-h-[44px] rounded-lg focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
       >
         {body}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { UserButton } from "@clerk/nextjs";
+import { SoundToggle } from "@/components/sound/SoundToggle";
 
 interface NavLink {
   href: string;
@@ -94,8 +95,11 @@ export function AppHeader() {
           </nav>
         </div>
 
-        <div className="rounded-full focus-within:ring-2 focus-within:ring-[var(--ring)]">
-          <UserButton />
+        <div className="flex items-center gap-1.5">
+          <SoundToggle />
+          <div className="rounded-full focus-within:ring-2 focus-within:ring-[var(--ring)]">
+            <UserButton />
+          </div>
         </div>
       </header>
     </>

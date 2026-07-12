@@ -226,6 +226,7 @@ export default function BookDetailPage({
           <div className="mt-6 flex items-center gap-4">
             <Link
               href={readHref}
+              data-sound="press"
               className="rounded-full bg-[var(--primary)] px-6 py-2.5 font-ui text-sm font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
             >
               {started ? "Continue reading" : "Begin reading"}
