@@ -43,9 +43,15 @@ export default function BookDetailPage({
           return;
         }
         if (!res.ok) throw new Error("Failed to load book");
-        const data = (await res.json()) as { book: Book; progress?: Book["progress"] };
+        const data = (await res.json()) as {
+          book: Book;
+          progress?: Book["progress"];
+        };
         if (cancelled) return;
-        setBook({ ...data.book, progress: data.progress ?? data.book.progress });
+        setBook({
+          ...data.book,
+          progress: data.progress ?? data.book.progress,
+        });
         setLoadState("ready");
       } catch {
         if (!cancelled) setLoadState("error");
@@ -109,7 +115,9 @@ export default function BookDetailPage({
     try {
       const res = await fetch(`/api/books/${bookId}`, { method: "DELETE" });
       if (!res.ok && res.status !== 204) {
-        const body = (await res.json().catch(() => null)) as ApiErrorBody | null;
+        const body = (await res
+          .json()
+          .catch(() => null)) as ApiErrorBody | null;
         throw new Error(body?.error?.message ?? "Couldn't remove this book.");
       }
       router.push("/shelf");
@@ -122,7 +130,9 @@ export default function BookDetailPage({
   if (loadState === "loading") {
     return (
       <div className="py-24 text-center">
-        <p className="font-ui text-sm text-muted-foreground">Opening the book…</p>
+        <p className="font-ui text-sm text-muted-foreground">
+          Opening the book…
+        </p>
       </div>
     );
   }
@@ -131,10 +141,12 @@ export default function BookDetailPage({
     return (
       <div className="py-24 text-center">
         <p className="eyebrow mb-4">NOT FOUND</p>
-        <h1 className="font-display text-3xl">This book isn&apos;t on your shelf.</h1>
+        <h1 className="font-display text-3xl">
+          This book isn&apos;t on your shelf.
+        </h1>
         <Link
           href="/shelf"
-          className="font-ui mt-6 inline-block text-sm text-[var(--primary)] hover:opacity-80"
+          className="mt-6 inline-block font-ui text-sm text-[var(--primary)] hover:opacity-80"
         >
           Back to your shelf
         </Link>
@@ -160,9 +172,17 @@ export default function BookDetailPage({
   const archetype = worldRevealed ? world?.themeArchetype : undefined;
 
   return (
-    <div data-world-theme={archetype} style={{ transition: "color 700ms ease" }}>
+    <div
+      data-world-theme={archetype}
+      style={{ transition: "color 700ms ease" }}
+    >
       <div className="grid grid-cols-1 gap-10 sm:grid-cols-[minmax(0,240px)_1fr]">
-        <div data-world-theme={archetype} style={{ transition: "background-color 700ms ease, border-color 700ms ease" }}>
+        <div
+          data-world-theme={archetype}
+          style={{
+            transition: "background-color 700ms ease, border-color 700ms ease",
+          }}
+        >
           <TypographicCover
             bookId={book.id}
             title={book.title}
@@ -174,16 +194,26 @@ export default function BookDetailPage({
 
         <div className="flex flex-col justify-center">
           <p className="eyebrow mb-2">IN YOUR LIBRARY</p>
-          <h1 className="font-display text-3xl leading-tight sm:text-4xl">{book.title}</h1>
+          <h1 className="font-display text-3xl leading-tight sm:text-4xl">
+            {book.title}
+          </h1>
           {book.author ? (
-            <p className="font-ui mt-2 text-sm text-muted-foreground">{book.author}</p>
+            <p className="mt-2 font-ui text-sm text-muted-foreground">
+              {book.author}
+            </p>
           ) : null}
 
-          <p className="font-ui mt-4 text-sm text-muted-foreground">
-            {book.totalWords.toLocaleString()} words · {book.totalChunks.toLocaleString()} pages
+          <PricingBadge
+            visibility={book.visibility}
+            pricingTier={book.pricingTier}
+          />
+
+          <p className="mt-4 font-ui text-sm text-muted-foreground">
+            {book.totalWords.toLocaleString()} words ·{" "}
+            {book.totalChunks.toLocaleString()} pages
           </p>
 
-          <p className="font-ui mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 font-ui text-sm text-muted-foreground">
             {started
               ? `You're on page ${progress?.currentChunk} of ${book.totalChunks} — ${Math.round(
                   progress?.percent ?? 0,
@@ -194,7 +224,7 @@ export default function BookDetailPage({
           <div className="mt-6 flex items-center gap-4">
             <Link
               href={readHref}
-              className="font-ui rounded-full bg-[var(--primary)] px-6 py-2.5 text-sm font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
+              className="rounded-full bg-[var(--primary)] px-6 py-2.5 font-ui text-sm font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
             >
               {started ? "Continue reading" : "Begin reading"}
             </Link>
@@ -208,7 +238,7 @@ export default function BookDetailPage({
                 Remove from shelf
               </button>
             ) : (
-              <div className="font-ui flex items-center gap-2 text-sm">
+              <div className="flex items-center gap-2 font-ui text-sm">
                 <span className="text-muted-foreground">Remove this book?</span>
                 <button
                   type="button"
@@ -245,6 +275,41 @@ export default function BookDetailPage({
   );
 }
 
+/**
+ * A quiet reminder of where this book sits in the visibility/monetization
+ * model (see CLAUDE.md "THE MODEL") — only ever rendered to someone who can
+ * already see the book (its owner or an admin), so it isn't a privacy leak.
+ */
+function PricingBadge({
+  visibility,
+  pricingTier,
+}: {
+  visibility?: string | null;
+  pricingTier?: string | null;
+}) {
+  if (pricingTier === "catalog") {
+    return (
+      <p className="mt-2 font-ui text-xs text-muted-foreground italic">
+        Public-domain catalog title — shared with every reader.
+      </p>
+    );
+  }
+  if (pricingTier === "public_subsidized" || visibility === "published") {
+    return (
+      <p className="mt-2 font-ui text-xs text-muted-foreground italic">
+        Contributed to the public library — shared with every reader,
+        subsidized.
+      </p>
+    );
+  }
+  return (
+    <p className="mt-2 font-ui text-xs text-muted-foreground italic">
+      Private — visible only to you. Premium-priced, since its analysis
+      isn&apos;t shared.
+    </p>
+  );
+}
+
 function StoryWorldSection({
   bookReady,
   worldLoaded,
@@ -273,13 +338,17 @@ function StoryWorldSection({
     return (
       <div className="rounded-lg border border-border bg-card p-6">
         <p className="eyebrow mb-2">STORY WORLD</p>
-        <p className="font-ui text-sm text-muted-foreground">Opening the world…</p>
+        <p className="font-ui text-sm text-muted-foreground">
+          Opening the world…
+        </p>
       </div>
     );
   }
 
   const status = world?.status ?? "none";
-  const isPending = status === "pending" || (job && (job.status === "queued" || job.status === "running"));
+  const isPending =
+    status === "pending" ||
+    (job && (job.status === "queued" || job.status === "running"));
   const isFailed = status === "failed" || job?.status === "failed";
 
   if (status === "completed" && world) {
@@ -287,12 +356,15 @@ function StoryWorldSection({
       <div
         data-world-theme={world.themeArchetype}
         className="rounded-lg border border-[var(--world-frame)] bg-[var(--world-surface)] p-6"
-        style={{ transition: "background-color 700ms ease, border-color 700ms ease, color 700ms ease" }}
+        style={{
+          transition:
+            "background-color 700ms ease, border-color 700ms ease, color 700ms ease",
+        }}
       >
         <p className="eyebrow mb-2">STORY WORLD</p>
 
         {world.settingDescription ? (
-          <p className="font-reading mt-2 text-[15px] leading-relaxed text-[var(--card-foreground)]">
+          <p className="mt-2 font-reading text-[15px] leading-relaxed text-[var(--card-foreground)]">
             {world.settingDescription}
           </p>
         ) : null}
@@ -304,8 +376,11 @@ function StoryWorldSection({
               .map(([key, value]) => (
                 <span
                   key={key}
-                  className="font-ui rounded-full border px-3 py-1 text-xs"
-                  style={{ borderColor: "var(--world-frame)", color: "var(--world-accent)" }}
+                  className="rounded-full border px-3 py-1 font-ui text-xs"
+                  style={{
+                    borderColor: "var(--world-frame)",
+                    color: "var(--world-accent)",
+                  }}
                 >
                   {value}
                 </span>
@@ -349,14 +424,17 @@ function StoryWorldSection({
   return (
     <div className="rounded-lg border border-border bg-card p-6">
       <p className="eyebrow mb-2">STORY WORLD</p>
-      <h2 className="font-display mt-1 text-2xl leading-snug">Awaken the world of this book.</h2>
-      <p className="font-ui mt-2 text-sm text-muted-foreground">
-        Meet its cast, its setting, and its shape — revealed only as far as you&apos;ve read.
+      <h2 className="mt-1 font-display text-2xl leading-snug">
+        Awaken the world of this book.
+      </h2>
+      <p className="mt-2 font-ui text-sm text-muted-foreground">
+        Meet its cast, its setting, and its shape — revealed only as far as
+        you&apos;ve read.
       </p>
       <button
         type="button"
         onClick={() => void onAwaken()}
-        className="font-ui mt-4 rounded-full bg-[var(--primary)] px-6 py-2.5 text-sm font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
+        className="mt-4 rounded-full bg-[var(--primary)] px-6 py-2.5 font-ui text-sm font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
       >
         Awaken the world
       </button>

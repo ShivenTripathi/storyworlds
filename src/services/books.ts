@@ -8,11 +8,30 @@ import { storage } from "@/services/storage";
 
 const CHUNK_INSERT_BATCH_SIZE = 100;
 
+/**
+ * Visibility/monetization model (see CLAUDE.md "THE MODEL"):
+ *  - 'public_subsidized': uploader waived rights (rightsAttestation set),
+ *    visibility='published', analysis shared across all readers, cheap.
+ *  - 'private_premium': visibility='private', analysis not shared (single
+ *    reader), so its cost isn't amortizable — premium priced.
+ *  - 'catalog': auto-ingested Gutenberg seed books (also shared/free, but
+ *    distinct from user contributions for admin reporting).
+ */
+export type PricingTier = "public_subsidized" | "private_premium" | "catalog";
+
+export type RightsAttestation = "public_domain" | "owned_contributed";
+
 export interface CreateBookFromPdfInput {
   ownerId: string;
   title: string;
   author?: string | null;
   data: Uint8Array;
+  /** Defaults to 'private' / 'private_premium' — see PricingTier above. */
+  visibility?: "private" | "published";
+  pricingTier?: PricingTier;
+  rightsAttestation?: RightsAttestation | null;
+  /** Set when visibility='published': who contributed it to the public library. */
+  contributedByUserId?: string | null;
 }
 
 /**
@@ -27,6 +46,12 @@ export async function createBookFromPdf({
   title,
   author,
   data,
+  visibility = "private",
+  pricingTier = visibility === "published"
+    ? "public_subsidized"
+    : "private_premium",
+  rightsAttestation = null,
+  contributedByUserId = null,
 }: CreateBookFromPdfInput) {
   await dbReady;
 
@@ -48,6 +73,10 @@ export async function createBookFromPdf({
         status: "ready",
         totalChunks: pages.length,
         totalWords,
+        visibility,
+        pricingTier,
+        rightsAttestation,
+        contributedByUserId,
       })
       .returning();
 
@@ -76,6 +105,10 @@ export async function createBookFromPdf({
         author: author ?? null,
         sourceKey,
         status: "failed",
+        visibility,
+        pricingTier,
+        rightsAttestation,
+        contributedByUserId,
       })
       .returning();
     return book;
@@ -162,6 +195,9 @@ export interface CreateBookFromTextInput {
   blurb?: string | null;
   archetype?: string;
   visibility?: "private" | "published";
+  /** Defaults to 'catalog' — auto-ingested Gutenberg seed books are shared/free. */
+  pricingTier?: PricingTier;
+  rightsAttestation?: RightsAttestation | null;
 }
 
 /**
@@ -182,6 +218,8 @@ export async function createBookFromText({
   blurb,
   archetype,
   visibility = "private",
+  pricingTier = "catalog",
+  rightsAttestation = "public_domain",
 }: CreateBookFromTextInput) {
   await dbReady;
 
@@ -210,6 +248,8 @@ export async function createBookFromText({
       themeArchetype: archetype ?? undefined,
       catalogSource,
       blurb: blurb ?? null,
+      pricingTier,
+      rightsAttestation,
     })
     .returning();
 
@@ -239,6 +279,8 @@ export interface BookDto {
   createdAt: Date;
   visibility?: string | null;
   themeArchetype?: string | null;
+  /** 'public_subsidized' | 'private_premium' | 'catalog' | null (legacy rows) — see PricingTier. */
+  pricingTier?: string | null;
   /** Set by listBooks: whether this book is on the shelf because the caller
    * owns it or because they've added a published book to their library. */
   source?: "owned" | "library";
@@ -262,6 +304,7 @@ export function toBookDto(
     createdAt: Date;
     visibility?: string | null;
     themeArchetype?: string | null;
+    pricingTier?: string | null;
   },
   progress?: {
     currentChunk: number | null;
@@ -280,6 +323,7 @@ export function toBookDto(
     createdAt: book.createdAt,
     visibility: book.visibility ?? null,
     themeArchetype: book.themeArchetype ?? null,
+    pricingTier: book.pricingTier ?? null,
   };
 
   if (source) {
@@ -474,12 +518,13 @@ export async function updateProgress(
   userId: string,
   bookId: string,
   currentChunk: number,
+  frontierChunk?: number,
 ) {
   await dbReady;
 
   // Clamp to the book's real length: an unbounded client-supplied position
   // could otherwise push the spoiler frontier to "finished" and unlock every
-  // reveal. frontierChunk is derived from this clamped value, never trusted raw.
+  // reveal. Both values are clamped, never trusted raw.
   const [bookRow] = await db
     .select({ totalChunks: books.totalChunks })
     .from(books)
@@ -487,15 +532,23 @@ export async function updateProgress(
     .limit(1);
   const maxChunk = Math.max(0, (bookRow?.totalChunks ?? 1) - 1);
   currentChunk = Math.min(Math.max(0, currentChunk), maxChunk);
+  // The client may report the furthest chunk it reached this session (e.g. it
+  // jumped forward then back within one debounce window); fold it into the
+  // frontier so pages actually seen aren't under-recorded. Clamped + never
+  // regresses (greatest() below).
+  const reportedFrontier =
+    frontierChunk == null
+      ? currentChunk
+      : Math.max(currentChunk, Math.min(Math.max(0, frontierChunk), maxChunk));
 
   const [row] = await db
     .insert(readingProgress)
-    .values({ userId, bookId, currentChunk, frontierChunk: currentChunk })
+    .values({ userId, bookId, currentChunk, frontierChunk: reportedFrontier })
     .onConflictDoUpdate({
       target: [readingProgress.userId, readingProgress.bookId],
       set: {
         currentChunk,
-        frontierChunk: sql`greatest(${readingProgress.frontierChunk}, ${currentChunk})`,
+        frontierChunk: sql`greatest(${readingProgress.frontierChunk}, ${reportedFrontier})`,
         updatedAt: sql`now()`,
       },
     })

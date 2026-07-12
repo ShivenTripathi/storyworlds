@@ -1,13 +1,35 @@
 import { desc, eq, gte, sql } from "drizzle-orm";
 import { db, dbReady } from "@/db";
-import { books, overlays, usageEvents, users, worldReferences } from "@/db/schema";
+import {
+  books,
+  overlays,
+  usageEvents,
+  users,
+  worldReferences,
+} from "@/db/schema";
+
+/**
+ * Privacy-aware classification of a book for the admin pane (see CLAUDE.md
+ * "THE MODEL" + "ADMIN CONTROL PANE"):
+ *  - 'catalog': auto-ingested Gutenberg seed (catalogSource set).
+ *  - 'contribution': a user contributed it to the public library
+ *    (pricingTier='public_subsidized', no catalogSource).
+ *  - 'private': visibility='private' — never surfaced outside this
+ *    admin-only view (or the owner's own shelf).
+ */
+export type AdminBookClass = "catalog" | "contribution" | "private";
 
 export interface AdminBookRow {
   id: string;
   title: string;
   owner: string | null;
+  ownerId: string | null;
   status: string;
   visibility: string | null;
+  pricingTier: string | null;
+  rightsAttestation: string | null;
+  catalogSource: string | null;
+  bookClass: AdminBookClass;
   themeArchetype: string | null;
   totalChunks: number | null;
   analysis: { worldStatus: string | null; overlayCount: number };
@@ -17,7 +39,27 @@ export interface AdminBookRow {
 
 export interface AdminOverview {
   books: AdminBookRow[];
-  totals: { books: number; users: number; spendUsd: number; tokensToday: number };
+  totals: {
+    books: number;
+    users: number;
+    spendUsd: number;
+    tokensToday: number;
+  };
+}
+
+function classify(book: {
+  catalogSource: string | null;
+  pricingTier: string | null;
+  visibility: string | null;
+}): AdminBookClass {
+  if (book.catalogSource) return "catalog";
+  if (
+    book.pricingTier === "public_subsidized" ||
+    book.visibility === "published"
+  ) {
+    return "contribution";
+  }
+  return "private";
 }
 
 /**
@@ -37,6 +79,9 @@ export async function getOverview(): Promise<AdminOverview> {
       ownerEmail: users.email,
       status: books.status,
       visibility: books.visibility,
+      pricingTier: books.pricingTier,
+      rightsAttestation: books.rightsAttestation,
+      catalogSource: books.catalogSource,
       themeArchetype: books.themeArchetype,
       totalChunks: books.totalChunks,
     })
@@ -72,8 +117,13 @@ export async function getOverview(): Promise<AdminOverview> {
       id: b.id,
       title: b.title,
       owner: b.ownerEmail ?? b.ownerId,
+      ownerId: b.ownerId,
       status: b.status,
       visibility: b.visibility,
+      pricingTier: b.pricingTier,
+      rightsAttestation: b.rightsAttestation,
+      catalogSource: b.catalogSource,
+      bookClass: classify(b),
       themeArchetype: b.themeArchetype,
       totalChunks: b.totalChunks,
       analysis: {

@@ -50,6 +50,29 @@ export const books = pgTable(
     totalWords: integer("total_words"),
     visibility: text("visibility").default("private"), // 'private' | 'published'
     priceCents: integer("price_cents").default(0),
+    // Visibility/monetization model (see CLAUDE.md "THE MODEL"): a book's
+    // analysis cost is only amortizable if the analyzed world can be
+    // shared. Public contributions (visibility='published') are shared
+    // across every reader and subsidized; private books are single-reader,
+    // so their (non-amortizable) analysis cost is premium-priced.
+    // 'public_subsidized' | 'private_premium' | 'catalog' (Gutenberg seed —
+    // also shared/free, but distinct from user contributions for admin
+    // reporting). Nullable/default null for pre-existing rows; treated as
+    // 'private_premium' by application code when absent.
+    pricingTier: text("pricing_tier"),
+    // The waiver recorded when a user contributes a book to the public
+    // library: 'public_domain' (the work itself is public domain) or
+    // 'owned_contributed' (the uploader owns the work and waives exclusive
+    // rights to contribute it). Null for private books and for books not
+    // yet run through the contribution flow.
+    rightsAttestation: text("rights_attestation"),
+    // The user who contributed this book to the public library, if any.
+    // Distinct from ownerId so admin reporting can tell "who grew the
+    // shared catalog" apart from "who currently owns this row" even if
+    // ownership ever changes.
+    contributedByUserId: text("contributed_by_user_id").references(
+      () => users.id,
+    ),
     contentHash: text("content_hash"),
     themeArchetype: text("theme_archetype").default("classic"),
     imageInterval: integer("image_interval").default(5),

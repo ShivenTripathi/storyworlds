@@ -87,6 +87,10 @@ export async function ingestNextCatalogBook(): Promise<IngestResult> {
       blurb: next.blurb,
       archetype: next.archetype,
       visibility: "published",
+      // Gutenberg seed titles are always public domain — distinct pricing
+      // tier from user contributions so admin reporting can tell them apart.
+      pricingTier: "catalog",
+      rightsAttestation: "public_domain",
     });
 
     const [job] = await db
