@@ -3,9 +3,13 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { ChatPanel } from "@/components/chat/ChatPanel";
-import { fetchWorldEntity } from "@/components/world/api";
+import { AppearanceTimeline } from "@/components/dossier/AppearanceTimeline";
+import { FactRow, SectionLabel } from "@/components/dossier/parts";
+import { PortraitPlate } from "@/components/dossier/PortraitPlate";
+import { RelationshipChips } from "@/components/dossier/RelationshipChips";
+import { fetchDossier } from "@/components/world/api";
 import { ProgressChip } from "@/components/world/ProgressChip";
-import type { WorldEntity } from "@/components/world/types";
+import type { DossierData } from "@/components/world/types";
 
 type LoadState = "loading" | "ready" | "not-found" | "error";
 
@@ -20,7 +24,7 @@ export default function CharacterDossierPage({
   // (`char%3Asherlock-holmes`). Decode before it's used as an entity id.
   const decodedEntityId = decodeURIComponent(entityId);
 
-  const [entity, setEntity] = useState<WorldEntity | null>(null);
+  const [dossier, setDossier] = useState<DossierData | null>(null);
   const [themeArchetype, setThemeArchetype] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [chatOpen, setChatOpen] = useState(false);
@@ -30,14 +34,14 @@ export default function CharacterDossierPage({
 
     async function load() {
       try {
-        const { entity: e, themeArchetype: theme } = await fetchWorldEntity(
+        const { dossier: d, themeArchetype: theme } = await fetchDossier(
           bookId,
           decodedEntityId,
         );
         if (cancelled) return;
-        setEntity(e);
+        setDossier(d);
         setThemeArchetype(theme);
-        setLoadState(e ? "ready" : "not-found");
+        setLoadState(d ? "ready" : "not-found");
       } catch {
         if (!cancelled) setLoadState("error");
       }
@@ -69,9 +73,12 @@ export default function CharacterDossierPage({
     );
   }
 
-  if (!entity) {
+  if (!dossier) {
     return (
-      <div className="py-24 text-center">
+      <div
+        data-world-theme={themeArchetype ?? undefined}
+        className="py-24 text-center"
+      >
         <p className="eyebrow mb-4">NOT YET MET</p>
         <h1 className="font-display text-2xl">
           You haven&apos;t met this character yet.
@@ -86,36 +93,159 @@ export default function CharacterDossierPage({
     );
   }
 
+  const { entity, visual, appearances, relationships, innerLifeGated } =
+    dossier;
+  const attributes = entity.attributes;
+
   return (
     <div
       data-world-theme={themeArchetype ?? undefined}
-      className="mx-auto max-w-2xl px-6 py-12"
+      className="mx-auto max-w-5xl px-6 py-12"
     >
-      <p className="eyebrow mb-2">DOSSIER · AS OF YOUR PAGE</p>
-      <h1 className="font-display text-4xl leading-tight">{entity.name}</h1>
+      <Link
+        href={`/books/${bookId}/read`}
+        className="font-ui text-xs text-muted-foreground transition-colors hover:text-[var(--world-accent)]"
+      >
+        ← Back to reading
+      </Link>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        {entity.attributes?.role ? (
-          <span className="font-ui text-sm text-muted-foreground">
-            {entity.attributes.role}
-          </span>
-        ) : null}
-        <ProgressChip introducedAtChunk={entity.introducedAtChunk} />
+      <header className="mt-6">
+        <p className="eyebrow mb-2">DOSSIER · AS OF YOUR PAGE</p>
+        <h1 className="font-display text-4xl leading-tight sm:text-5xl">
+          {entity.name}
+        </h1>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <ProgressChip introducedAtChunk={entity.introducedAtChunk} />
+          {appearances.pageCount > 0 ? (
+            <ProgressChip
+              label={`SEEN ON ${appearances.pageCount} ${
+                appearances.pageCount === 1 ? "PAGE" : "PAGES"
+              }`}
+            />
+          ) : null}
+        </div>
+      </header>
+
+      <div className="mt-10 grid items-start gap-10 md:grid-cols-[300px_1fr]">
+        {/* ── Visual + ledger ─────────────────────────────────────────── */}
+        <aside className="space-y-8">
+          <PortraitPlate visual={visual} name={entity.name} />
+
+          {entity.visualDescription ? (
+            <section>
+              <SectionLabel>IN THE MIND&apos;S EYE</SectionLabel>
+              <p className="font-reading text-sm leading-relaxed text-foreground italic">
+                {entity.visualDescription}
+              </p>
+            </section>
+          ) : null}
+
+          <section>
+            <SectionLabel>THE RECORD</SectionLabel>
+            <div>
+              <FactRow
+                label="KIND"
+                value={
+                  <span className="capitalize">{entity.kind ?? "figure"}</span>
+                }
+              />
+              {entity.introducedAtChunk != null ? (
+                <FactRow
+                  label="FIRST APPEARS"
+                  value={`Page ${entity.introducedAtChunk + 1}`}
+                />
+              ) : null}
+              <FactRow
+                label="SEEN ON"
+                value={
+                  appearances.pageCount > 0
+                    ? `${appearances.pageCount} ${
+                        appearances.pageCount === 1 ? "page" : "pages"
+                      }`
+                    : "—"
+                }
+              />
+              {appearances.firstPage != null && appearances.lastPage != null ? (
+                <FactRow
+                  label="SPAN"
+                  value={
+                    appearances.firstPage === appearances.lastPage
+                      ? `Page ${appearances.firstPage}`
+                      : `Pages ${appearances.firstPage}–${appearances.lastPage}`
+                  }
+                />
+              ) : null}
+            </div>
+          </section>
+        </aside>
+
+        {/* ── Prose, appearances, relationships ───────────────────────── */}
+        <main className="space-y-10">
+          {attributes?.role ? (
+            <section>
+              <SectionLabel>WHO THEY ARE</SectionLabel>
+              <p className="font-reading text-base leading-relaxed">
+                {attributes.role}
+              </p>
+            </section>
+          ) : null}
+
+          <InnerLifeSection
+            attributes={attributes}
+            gated={innerLifeGated}
+            name={entity.name}
+          />
+
+          {appearances.pageCount > 0 ? (
+            <section>
+              <SectionLabel>APPEARANCES</SectionLabel>
+              <p className="font-reading text-sm leading-relaxed text-muted-foreground">
+                Present on{" "}
+                <span className="text-foreground">
+                  {appearances.pageCount}{" "}
+                  {appearances.pageCount === 1 ? "page" : "pages"}
+                </span>{" "}
+                of what you&apos;ve read
+                {appearances.firstPage != null
+                  ? `, first on page ${appearances.firstPage}`
+                  : ""}
+                .
+              </p>
+              <div className="mt-4">
+                <AppearanceTimeline appearances={appearances} />
+              </div>
+            </section>
+          ) : null}
+
+          <section>
+            <SectionLabel>SEEN ALONGSIDE</SectionLabel>
+            {relationships.length > 0 ? (
+              <RelationshipChips
+                bookId={bookId}
+                relationships={relationships}
+              />
+            ) : (
+              <p className="font-reading text-sm leading-relaxed text-muted-foreground italic">
+                No shared scenes yet — companions will surface here as you read
+                on.
+              </p>
+            )}
+          </section>
+        </main>
       </div>
 
-      <DossierSections entity={entity} />
-
+      {/* ── Conversation ─────────────────────────────────────────────── */}
       {!chatOpen ? (
         <button
           type="button"
           onClick={() => setChatOpen(true)}
-          className="mt-8 rounded-full bg-[var(--world-accent)] px-6 py-2.5 font-ui text-sm font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90"
+          className="mt-12 rounded-full bg-[var(--world-accent)] px-6 py-2.5 font-ui text-sm font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90"
         >
           Talk to {entity.name}
         </button>
       ) : (
         <section
-          className="mt-10 border-t pt-8"
+          className="mt-12 border-t pt-8"
           style={{ borderColor: "var(--world-frame)" }}
         >
           <p className="eyebrow mb-4">A CONVERSATION</p>
@@ -139,47 +269,63 @@ export default function CharacterDossierPage({
   );
 }
 
-function DossierSections({ entity }: { entity: WorldEntity }) {
-  const { attributes } = entity;
-  const hasInnerLife = Boolean(
-    attributes?.internalState || attributes?.keyMotivation,
-  );
+/**
+ * The inner life: revealed field-by-field once the reader has earned it, or a
+ * sealed affordance (never the content itself) while the frontier still hides
+ * it. Renders nothing when the character simply has no inner-life data.
+ */
+function InnerLifeSection({
+  attributes,
+  gated,
+  name,
+}: {
+  attributes: DossierData["entity"]["attributes"];
+  gated: boolean;
+  name: string;
+}) {
+  const rows = [
+    { label: "INTERNAL STATE", value: attributes?.internalState },
+    { label: "KEY MOTIVATION", value: attributes?.keyMotivation },
+    { label: "SCARS", value: attributes?.scars },
+  ].filter((r) => r.value);
+
+  if (rows.length === 0 && !gated) return null;
 
   return (
-    <div className="mt-8 space-y-8">
-      {attributes?.role ? (
-        <section>
-          <p className="eyebrow mb-2">WHO THEY ARE</p>
-          <p className="font-reading text-sm leading-relaxed">
-            {attributes.role}
+    <section>
+      <SectionLabel>THE INNER LIFE</SectionLabel>
+      {gated ? (
+        <div
+          className="rounded-md border border-dashed px-4 py-5"
+          style={{
+            borderColor: "var(--world-frame)",
+            background:
+              "color-mix(in srgb, var(--world-accent) 5%, transparent)",
+          }}
+        >
+          <p
+            aria-hidden="true"
+            className="mb-2 font-display text-lg"
+            style={{ color: "var(--world-accent)" }}
+          >
+            ❧
           </p>
-        </section>
-      ) : null}
-
-      {hasInnerLife ? (
-        <section className="space-y-3">
-          <p className="eyebrow mb-2">THE INNER LIFE</p>
-          {attributes?.internalState ? (
-            <p className="font-reading text-sm leading-relaxed">
-              {attributes.internalState}
-            </p>
-          ) : null}
-          {attributes?.keyMotivation ? (
-            <p className="font-reading text-sm leading-relaxed text-muted-foreground">
-              {attributes.keyMotivation}
-            </p>
-          ) : null}
-        </section>
-      ) : null}
-
-      {entity.visualDescription ? (
-        <section>
-          <p className="eyebrow mb-2">IN THE MIND&apos;S EYE</p>
-          <p className="font-reading text-sm leading-relaxed italic">
-            {entity.visualDescription}
+          <p className="font-reading text-sm leading-relaxed text-muted-foreground italic">
+            {name}&apos;s inner life stays sealed for now. Keep reading — their
+            motivations and scars unseal once you&apos;ve spent more time
+            together.
           </p>
-        </section>
-      ) : null}
-    </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {rows.map((r) => (
+            <div key={r.label}>
+              <p className="eyebrow mb-1">{r.label}</p>
+              <p className="font-reading text-sm leading-relaxed">{r.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

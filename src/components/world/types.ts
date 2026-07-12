@@ -34,6 +34,44 @@ export interface WorldEntity {
   introducedAtChunk?: number;
 }
 
+// ---------------------------------------------------------------------------
+// Character dossier — GET /api/books/{id}/world/entities/{entityId}
+// ---------------------------------------------------------------------------
+
+/** A framed scene illustration featuring the character. */
+export interface DossierVisual {
+  imageUrl: string | null;
+  caption: string | null;
+  page: number | null;
+}
+
+/** Where in the read-so-far book the character is active. */
+export interface DossierAppearances {
+  pageCount: number;
+  firstPage: number | null;
+  lastPage: number | null;
+  ticks: number[];
+  frontierChunk: number | null;
+  totalChunks: number | null;
+}
+
+/** Another entity the character shares scenes with, ranked by shared pages. */
+export interface DossierRelationship {
+  id: string;
+  name: string;
+  kind: string;
+  sharedPages: number;
+}
+
+export interface DossierData {
+  entity: WorldEntity;
+  themeArchetype: string | null;
+  innerLifeGated: boolean;
+  visual: DossierVisual;
+  appearances: DossierAppearances;
+  relationships: DossierRelationship[];
+}
+
 export interface TimelineEntry {
   label: string;
   summary: string;

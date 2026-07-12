@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { dbReady } from "@/db";
 import { requireBookAccess, requireUser } from "@/lib/auth";
 import { handleApiError } from "@/lib/errors";
-import { getEntityForDossier } from "@/services/world";
+import { getDossier } from "@/services/world";
 
 type Params = { params: Promise<{ bookId: string; entityId: string }> };
 
 /**
- * Single-entity lookup for the character dossier. Resolves the entity by id
+ * Enriched dossier lookup for a character. Resolves the entity by id
  * regardless of the reader's frontier (so a "Dossier →" link never dead-ends
- * on "not met"), while inner-life attributes stay spoiler-gated by frontier —
- * see getEntityForDossier. Frontier gating is ON by default; only the book's
+ * on "not met"), while inner-life attributes, appearances, the illustrated
+ * scene, and co-occurring characters all stay spoiler-gated by frontier —
+ * see getDossier. Frontier gating is ON by default; only the book's
  * owner/admin can opt out with ?full=1 (never a plain reader).
  */
 export async function GET(req: Request, { params }: Params) {
@@ -30,14 +31,19 @@ export async function GET(req: Request, { params }: Params) {
     // still resolves.
     const decodedId = decodeURIComponent(entityId);
 
-    const { entity, themeArchetype } = await getEntityForDossier({
+    const dossier = await getDossier({
       bookId,
       userId,
       entityId: decodedId,
       useFrontier,
     });
 
-    return NextResponse.json({ entity, themeArchetype });
+    // Keep the "not met / not analyzed" contract simple for the client: a null
+    // entity collapses the whole dossier to null.
+    return NextResponse.json({
+      dossier: dossier.entity ? dossier : null,
+      themeArchetype: dossier.themeArchetype,
+    });
   } catch (e) {
     return handleApiError(e);
   }

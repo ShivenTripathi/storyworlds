@@ -1,18 +1,19 @@
 import type {
   ApiErrorBody,
+  DossierData,
   JobResponse,
   OverlayResponse,
-  WorldEntity,
   WorldResponse,
 } from "./types";
 
 /**
- * Single-entity dossier lookup contract
- * (GET /api/books/{id}/world/entities/{entityId}). `entity` is null when the
- * world isn't analyzed yet or no entity matches the id.
+ * Character dossier lookup contract
+ * (GET /api/books/{id}/world/entities/{entityId}). `dossier` is null when the
+ * world isn't analyzed yet or no entity matches the id; `themeArchetype` is
+ * still returned so the page can theme its "not met" state.
  */
-export interface WorldEntityResponse {
-  entity: WorldEntity | null;
+export interface DossierResponse {
+  dossier: DossierData | null;
   themeArchetype: string | null;
 }
 
@@ -63,17 +64,19 @@ export function fetchWorld(bookId: string): Promise<WorldResponse> {
 }
 
 /**
- * Fetches a single entity's dossier by id. Resolves the entity regardless of
- * the reader's frontier (so a "Dossier →" link never dead-ends), with
- * inner-life attributes still spoiler-gated server-side. Entity ids contain a
- * colon (`char:sherlock-holmes`); we encode the id so it survives as one path
- * segment.
+ * Fetches a character's enriched dossier by id (entity + inner life, an
+ * illustrated scene they appear in, appearances across the read-so-far book,
+ * and co-occurring characters). Resolves the entity regardless of the reader's
+ * frontier (so a "Dossier →" link never dead-ends), while every field that
+ * could run ahead of the reader stays spoiler-gated server-side. Entity ids
+ * contain a colon (`char:sherlock-holmes`); we encode the id so it survives as
+ * one path segment.
  */
-export function fetchWorldEntity(
+export function fetchDossier(
   bookId: string,
   entityId: string,
-): Promise<WorldEntityResponse> {
-  return request<WorldEntityResponse>(
+): Promise<DossierResponse> {
+  return request<DossierResponse>(
     `/api/books/${bookId}/world/entities/${encodeURIComponent(entityId)}`,
   );
 }
