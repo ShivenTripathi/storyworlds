@@ -1,0 +1,659 @@
+/**
+ * Analytics query layer — thin, no route/auth logic (callers do the
+ * auth/admin gating; see CLAUDE.md "Route handlers are thin"). Backs the
+ * reader-stats dashboard, per-book stats strip, the gamified Codex, and the
+ * admin metrics view (docs/analytics-plan.md, Tiers 1/2/3).
+ *
+ * SPOILER SAFETY: every function that touches world content (entities,
+ * overlays) is frontier-gated using the exact pattern in
+ * src/services/world.ts getWorldForReader — look up readingProgress's
+ * frontierChunk (default 0 when the reader has no progress row yet), null
+ * only for an explicit owner/admin full view, and fail CLOSED on unknown
+ * introduction points. getAdminMetrics is aggregate-only and never returns
+ * per-entity/per-user world content.
+ */
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
+import { db, dbReady } from "@/db";
+import {
+  books,
+  chatMessages,
+  chatSessions,
+  entities,
+  images,
+  overlays,
+  readingProgress,
+  usageEvents,
+  worldReferences,
+} from "@/db/schema";
+import {
+  cardState,
+  prominenceScore,
+  rarityFromScore,
+  type Rarity,
+} from "@/domain/codex";
+import { storage } from "@/services/storage";
+
+function startOfUtcDay(d: Date): Date {
+  return new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+  );
+}
+
+function activeIdsOf(row: { activeEntityIds: unknown }): string[] {
+  return Array.isArray(row.activeEntityIds)
+    ? (row.activeEntityIds as string[])
+    : [];
+}
+
+// ---------------------------------------------------------------------------
+// getReaderStats — across every book the caller has ever opened
+// ---------------------------------------------------------------------------
+
+export interface MostChattedCharacter {
+  bookId: string;
+  entityId: string;
+  name: string;
+  messageCount: number;
+}
+
+export interface ReaderStatsDto {
+  booksStarted: number;
+  booksFinished: number;
+  booksInProgress: number;
+  /** Frontier-based: sum of (min(frontierChunk+1, totalChunks)) across books. */
+  totalPagesRead: number;
+  /** Frontier-based estimate: pages-read fraction × the book's totalWords. */
+  totalWordsRead: number;
+  /** Distinct (bookId, entityId) pairs introduced at/behind that book's frontier. */
+  castMet: number;
+  mostChattedCharacter: MostChattedCharacter | null;
+  /** Consecutive days (ending today or yesterday) with a progress update. */
+  readingStreakDays: number;
+}
+
+/** Walks a DESC list of UTC calendar days and counts the current streak. */
+function computeStreakDays(daysDesc: Date[]): number {
+  if (daysDesc.length === 0) return 0;
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+  const today = startOfUtcDay(new Date());
+  const mostRecent = startOfUtcDay(daysDesc[0]);
+  const gapFromToday = Math.round(
+    (today.getTime() - mostRecent.getTime()) / ONE_DAY_MS,
+  );
+  // No progress today AND none yesterday -> the streak has lapsed.
+  if (gapFromToday > 1) return 0;
+
+  let streak = 1;
+  for (let i = 1; i < daysDesc.length; i++) {
+    const prev = startOfUtcDay(daysDesc[i - 1]);
+    const curr = startOfUtcDay(daysDesc[i]);
+    const gap = Math.round((prev.getTime() - curr.getTime()) / ONE_DAY_MS);
+    if (gap === 1) streak += 1;
+    else break;
+  }
+  return streak;
+}
+
+/**
+ * Cross-book reader stats for the shelf's "Your Reading" dashboard. All
+ * aggregates run as a small, fixed number of SQL queries (no per-book
+ * fan-out loop) regardless of how many books the caller has read.
+ */
+export async function getReaderStats(userId: string): Promise<ReaderStatsDto> {
+  await dbReady;
+
+  // Books started/finished + frontier-based pages/words read, in one
+  // aggregate query over the caller's progress rows joined to book length.
+  const [progressAgg] = await db
+    .select({
+      booksStarted: sql<number>`count(*)::int`,
+      booksFinished: sql<number>`count(*) filter (
+        where ${books.totalChunks} is not null
+          and ${readingProgress.frontierChunk} >= ${books.totalChunks} - 1
+      )::int`,
+      totalPagesRead: sql<number>`coalesce(sum(
+        least(${readingProgress.frontierChunk} + 1, coalesce(${books.totalChunks}, ${readingProgress.frontierChunk} + 1))
+      ), 0)::int`,
+      totalWordsRead: sql<number>`coalesce(sum(
+        case when ${books.totalChunks} > 0 and ${books.totalWords} is not null
+          then (least(${readingProgress.frontierChunk} + 1, ${books.totalChunks})::float / ${books.totalChunks}) * ${books.totalWords}
+          else 0 end
+      ), 0)::int`,
+    })
+    .from(readingProgress)
+    .innerJoin(books, eq(books.id, readingProgress.bookId))
+    .where(eq(readingProgress.userId, userId));
+
+  // Distinct cast met across every book: an entity counts once it's
+  // introduced at/behind THAT book's frontier — joined per-row, not looped.
+  const [castRow] = await db
+    .select({
+      castMet: sql<number>`count(distinct (${entities.bookId}::text || ':' || ${entities.id}))::int`,
+    })
+    .from(entities)
+    .innerJoin(
+      readingProgress,
+      and(
+        eq(readingProgress.bookId, entities.bookId),
+        eq(readingProgress.userId, userId),
+      ),
+    )
+    .where(
+      and(
+        sql`${entities.introducedAtChunk} is not null`,
+        lte(entities.introducedAtChunk, readingProgress.frontierChunk),
+      ),
+    );
+
+  // Most-chatted character (by message count) across all books.
+  const [topChat] = await db
+    .select({
+      bookId: chatSessions.bookId,
+      entityId: chatSessions.entityId,
+      name: entities.name,
+      messageCount: sql<number>`count(*)::int`,
+    })
+    .from(chatMessages)
+    .innerJoin(chatSessions, eq(chatMessages.sessionId, chatSessions.id))
+    .innerJoin(
+      entities,
+      and(
+        eq(entities.bookId, chatSessions.bookId),
+        eq(entities.id, chatSessions.entityId),
+      ),
+    )
+    .where(eq(chatSessions.userId, userId))
+    .groupBy(chatSessions.bookId, chatSessions.entityId, entities.name)
+    .orderBy(desc(sql`count(*)`))
+    .limit(1);
+
+  // Reading streak from the cadence of progress updates (see
+  // docs/analytics-plan.md "reading time" gap — this is the approximation).
+  const dayRows = await db
+    .select({
+      day: sql<string>`date_trunc('day', ${readingProgress.updatedAt})::date`,
+    })
+    .from(readingProgress)
+    .where(eq(readingProgress.userId, userId))
+    .groupBy(sql`date_trunc('day', ${readingProgress.updatedAt})`)
+    .orderBy(desc(sql`date_trunc('day', ${readingProgress.updatedAt})`));
+  const readingStreakDays = computeStreakDays(
+    dayRows.map((r) => new Date(r.day)),
+  );
+
+  const booksStarted = progressAgg?.booksStarted ?? 0;
+  const booksFinished = progressAgg?.booksFinished ?? 0;
+
+  return {
+    booksStarted,
+    booksFinished,
+    booksInProgress: Math.max(0, booksStarted - booksFinished),
+    totalPagesRead: progressAgg?.totalPagesRead ?? 0,
+    totalWordsRead: progressAgg?.totalWordsRead ?? 0,
+    castMet: castRow?.castMet ?? 0,
+    mostChattedCharacter: topChat
+      ? {
+          bookId: topChat.bookId,
+          entityId: topChat.entityId,
+          name: topChat.name,
+          messageCount: topChat.messageCount,
+        }
+      : null,
+    readingStreakDays,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// getBookStats — one book, for the caller
+// ---------------------------------------------------------------------------
+
+// Rough average adult silent-reading pace, used only for a ballpark
+// time-to-finish estimate until real dwell-time instrumentation exists (see
+// docs/analytics-plan.md's "reading time" gap).
+const ASSUMED_WORDS_PER_MINUTE = 200;
+
+export interface BookStatsDto {
+  /** min(frontierChunk+1, totalChunks) / totalChunks, as a whole percent. */
+  progressPercent: number;
+  /** 1-based furthest page the reader has reached (their frontier). */
+  furthestPage: number;
+  castMet: number;
+  castTotal: number;
+  scenesUnlocked: number;
+  /** User-authored chat messages sent to any character in this book. */
+  chatMessagesSent: number;
+  /** null when the book has no known word count. */
+  estMinutesToFinish: number | null;
+}
+
+/**
+ * Per-book stats strip: progress, cast met vs total (frontier-gated), scenes
+ * unlocked, chat activity, and a rough time-to-finish. A fixed handful of
+ * queries regardless of book length.
+ */
+export async function getBookStats(
+  userId: string,
+  bookId: string,
+): Promise<BookStatsDto> {
+  await dbReady;
+
+  const [book] = await db
+    .select({ totalChunks: books.totalChunks, totalWords: books.totalWords })
+    .from(books)
+    .where(eq(books.id, bookId))
+    .limit(1);
+  const totalChunks = book?.totalChunks ?? 0;
+  const totalWords = book?.totalWords ?? 0;
+
+  const [progress] = await db
+    .select({ frontierChunk: readingProgress.frontierChunk })
+    .from(readingProgress)
+    .where(
+      and(
+        eq(readingProgress.userId, userId),
+        eq(readingProgress.bookId, bookId),
+      ),
+    )
+    .limit(1);
+  const frontierChunk = progress?.frontierChunk ?? 0;
+
+  const pagesRead =
+    totalChunks > 0
+      ? Math.min(frontierChunk + 1, totalChunks)
+      : frontierChunk + 1;
+  const progressPercent =
+    totalChunks > 0 ? Math.round((pagesRead / totalChunks) * 100) : 0;
+
+  const [castRow] = await db
+    .select({
+      total: sql<number>`count(*)::int`,
+      met: sql<number>`count(*) filter (
+        where ${entities.introducedAtChunk} is not null
+          and ${entities.introducedAtChunk} <= ${frontierChunk}
+      )::int`,
+    })
+    .from(entities)
+    .where(eq(entities.bookId, bookId));
+
+  const [scenesRow] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(overlays)
+    .where(
+      and(
+        eq(overlays.bookId, bookId),
+        eq(overlays.status, "ready"),
+        lte(overlays.chunkIdx, frontierChunk),
+      ),
+    );
+
+  const [chatRow] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(chatMessages)
+    .innerJoin(chatSessions, eq(chatMessages.sessionId, chatSessions.id))
+    .where(
+      and(
+        eq(chatSessions.userId, userId),
+        eq(chatSessions.bookId, bookId),
+        eq(chatMessages.role, "user"),
+      ),
+    );
+
+  const wordsRead =
+    totalChunks > 0 && totalWords
+      ? Math.round((pagesRead / totalChunks) * totalWords)
+      : 0;
+  const wordsRemaining = Math.max(0, totalWords - wordsRead);
+  const estMinutesToFinish =
+    totalWords > 0
+      ? Math.round(wordsRemaining / ASSUMED_WORDS_PER_MINUTE)
+      : null;
+
+  return {
+    progressPercent,
+    furthestPage: frontierChunk + 1,
+    castMet: castRow?.met ?? 0,
+    castTotal: castRow?.total ?? 0,
+    scenesUnlocked: scenesRow?.n ?? 0,
+    chatMessagesSent: chatRow?.n ?? 0,
+    estMinutesToFinish,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// getCodexForBook — the gamified card collection
+// ---------------------------------------------------------------------------
+
+export interface CodexCardLocked {
+  state: "locked";
+  /** Safe to expose: doesn't identify WHICH entity, just its category. */
+  kind: string;
+  /** Stable position in a fixed grid layout — not derived from story order. */
+  slot: number;
+}
+
+export interface CodexCardRevealed {
+  state: "met" | "known";
+  id: string;
+  name: string;
+  kind: string;
+  rarity: Rarity;
+  portraitUrl: string | null;
+  slot: number;
+}
+
+export type CodexCard = CodexCardLocked | CodexCardRevealed;
+
+export interface CodexDto {
+  cards: CodexCard[];
+  counts: Record<string, { met: number; total: number }>;
+}
+
+export interface GetCodexOptions {
+  userId: string;
+  bookId: string;
+  /** Owner/admin full view: every card is 'known', no frontier lookup. */
+  isOwnerOrAdmin?: boolean;
+}
+
+/**
+ * Builds the Codex card grid for a book, one card per entity, gated by the
+ * reader's frontier via the SAME fail-closed rule as getWorldForReader
+ * (src/services/world.ts): unknown or ahead-of-frontier introductions are
+ * 'locked'. A locked card carries only its `kind` and grid `slot` — no id,
+ * name, rarity, or portrait ever leaves this function for it.
+ *
+ * Batches all the "screen time" ingredients (pageCount, co-occurrence for
+ * relationshipDegree, chat count, portrait image) in a fixed number of
+ * queries — one entity-row scan, one frontier-bounded overlay scan, one
+ * grouped chat-count query, one batch image lookup — never one query per
+ * entity.
+ */
+export async function getCodexForBook(
+  opts: GetCodexOptions,
+): Promise<CodexDto> {
+  await dbReady;
+
+  const [book] = await db
+    .select({ totalChunks: books.totalChunks })
+    .from(books)
+    .where(eq(books.id, opts.bookId))
+    .limit(1);
+  const totalChunks = book?.totalChunks ?? 0;
+
+  let frontierChunk: number | null = null;
+  if (!opts.isOwnerOrAdmin) {
+    const [progress] = await db
+      .select({ frontierChunk: readingProgress.frontierChunk })
+      .from(readingProgress)
+      .where(
+        and(
+          eq(readingProgress.userId, opts.userId),
+          eq(readingProgress.bookId, opts.bookId),
+        ),
+      )
+      .limit(1);
+    frontierChunk = progress?.frontierChunk ?? 0;
+  }
+
+  // Deterministic, content-independent ordering (id is a stable slug) so a
+  // card's grid `slot` doesn't shuffle between calls.
+  const entityRows = await db
+    .select()
+    .from(entities)
+    .where(eq(entities.bookId, opts.bookId))
+    .orderBy(asc(entities.id));
+
+  // One frontier-bounded overlay scan feeds pageCount + co-occurrence +
+  // portrait lookup for every entity at once.
+  const overlayConds = [
+    eq(overlays.bookId, opts.bookId),
+    eq(overlays.status, "ready"),
+  ];
+  if (frontierChunk !== null) {
+    overlayConds.push(lte(overlays.chunkIdx, frontierChunk));
+  }
+  const overlayRows = await db
+    .select({
+      chunkIdx: overlays.chunkIdx,
+      activeEntityIds: overlays.activeEntityIds,
+      imageId: overlays.imageId,
+    })
+    .from(overlays)
+    .where(and(...overlayConds))
+    .orderBy(asc(overlays.chunkIdx));
+
+  const pageCountByEntity = new Map<string, number>();
+  const coOccurByEntity = new Map<string, Set<string>>();
+  const firstImageByEntity = new Map<string, string>();
+  for (const row of overlayRows) {
+    const ids = activeIdsOf(row);
+    for (const id of ids) {
+      pageCountByEntity.set(id, (pageCountByEntity.get(id) ?? 0) + 1);
+      if (row.imageId && !firstImageByEntity.has(id)) {
+        firstImageByEntity.set(id, row.imageId);
+      }
+      let set = coOccurByEntity.get(id);
+      if (!set) {
+        set = new Set();
+        coOccurByEntity.set(id, set);
+      }
+      for (const other of ids) {
+        if (other !== id) set.add(other);
+      }
+    }
+  }
+
+  // Batch chat-message counts for the whole book, grouped by entity.
+  const chatRows = await db
+    .select({
+      entityId: chatSessions.entityId,
+      n: sql<number>`count(*)::int`,
+    })
+    .from(chatMessages)
+    .innerJoin(chatSessions, eq(chatMessages.sessionId, chatSessions.id))
+    .where(
+      and(
+        eq(chatSessions.userId, opts.userId),
+        eq(chatSessions.bookId, opts.bookId),
+      ),
+    )
+    .groupBy(chatSessions.entityId);
+  const chatCountByEntity = new Map(chatRows.map((r) => [r.entityId, r.n]));
+
+  // Batch portrait lookup for every distinct illustrated scene referenced —
+  // bounded by cast size, not by book length.
+  const imageIds = [...new Set(firstImageByEntity.values())];
+  const imageRows = imageIds.length
+    ? await db
+        .select({ id: images.id, storageKey: images.storageKey })
+        .from(images)
+        .where(inArray(images.id, imageIds))
+    : [];
+  const portraitUrlByImageId = new Map<string, string>();
+  await Promise.all(
+    imageRows.map(async (r) => {
+      portraitUrlByImageId.set(r.id, await storage.getUrl(r.storageKey));
+    }),
+  );
+
+  const counts: Record<string, { met: number; total: number }> = {};
+  const cards: CodexCard[] = [];
+
+  entityRows.forEach((e, slot) => {
+    const bucket = (counts[e.kind] ??= { met: 0, total: 0 });
+    bucket.total += 1;
+
+    const state = cardState(e.introducedAtChunk, frontierChunk);
+    if (state === "locked") {
+      cards.push({ state: "locked", kind: e.kind, slot });
+      return;
+    }
+
+    bucket.met += 1;
+
+    const pageCount = pageCountByEntity.get(e.id) ?? 0;
+    const relationshipDegree = coOccurByEntity.get(e.id)?.size ?? 0;
+    const chatCount = chatCountByEntity.get(e.id) ?? 0;
+    const score = prominenceScore({
+      pageCount,
+      relationshipDegree,
+      chatCount,
+      totalChunks,
+    });
+    const rarity = rarityFromScore(score);
+    const imageId = firstImageByEntity.get(e.id);
+    const portraitUrl = imageId
+      ? (portraitUrlByImageId.get(imageId) ?? null)
+      : null;
+
+    cards.push({
+      state,
+      id: e.id,
+      name: e.name,
+      kind: e.kind,
+      rarity,
+      portraitUrl,
+      slot,
+    });
+  });
+
+  return { cards, counts };
+}
+
+// ---------------------------------------------------------------------------
+// getAdminMetrics — cross-user aggregates for the admin "Press Room"
+// ---------------------------------------------------------------------------
+
+// Google AI Studio free-tier daily request cap (see CLAUDE.md ZERO-COST
+// CONSTRAINT) — the denominator for the free-tier headroom estimate below.
+const GEMINI_FREE_TIER_RPD = 1500;
+
+export interface CostByBookDay {
+  bookId: string | null;
+  day: string;
+  costUsd: number;
+  tokens: number;
+}
+
+export interface AdminMetricsDto {
+  costByBookDay: CostByBookDay[];
+  totalSpendUsd: number;
+  /** Distinct (user, book) reading pairs on analyzed books ÷ analyzed books. */
+  amortizationRatio: number;
+  freeTier: {
+    requestsToday: number;
+    dailyLimit: number;
+    headroomPct: number;
+  };
+  engagement: {
+    booksOpened: number;
+    chatMessagesTotal: number;
+    completionRatePct: number;
+  };
+}
+
+/**
+ * Cross-user aggregate metrics for the admin dashboard: LLM cost per
+ * book/day, the amortization ratio (readers per analyzed book — the core
+ * unit economic under the zero-cost model), free-tier request headroom, and
+ * basic engagement/completion. No per-user or per-entity data is returned;
+ * this function does NOT check the caller's role — the route admin-gates it
+ * (see CLAUDE.md "Route handlers are thin").
+ */
+export async function getAdminMetrics(): Promise<AdminMetricsDto> {
+  await dbReady;
+
+  const costByBookDay = await db
+    .select({
+      bookId: usageEvents.bookId,
+      day: sql<string>`date_trunc('day', ${usageEvents.createdAt})::date`,
+      costUsd: sql<number>`coalesce(sum(${usageEvents.costUsd}), 0)::float`,
+      tokens: sql<number>`coalesce(sum(
+        coalesce(${usageEvents.inputTokens}, 0) + coalesce(${usageEvents.outputTokens}, 0)
+      ), 0)::int`,
+    })
+    .from(usageEvents)
+    .groupBy(
+      usageEvents.bookId,
+      sql`date_trunc('day', ${usageEvents.createdAt})`,
+    )
+    .orderBy(desc(sql`date_trunc('day', ${usageEvents.createdAt})`));
+
+  const [{ totalSpendUsd }] = await db
+    .select({
+      totalSpendUsd: sql<number>`coalesce(sum(${usageEvents.costUsd}), 0)::float`,
+    })
+    .from(usageEvents);
+
+  const [{ analyzedBooks }] = await db
+    .select({ analyzedBooks: sql<number>`count(*)::int` })
+    .from(worldReferences)
+    .where(eq(worldReferences.status, "completed"));
+
+  const [{ readerBookPairs }] = await db
+    .select({
+      readerBookPairs: sql<number>`count(distinct (
+        ${readingProgress.userId} || ':' || ${readingProgress.bookId}::text
+      ))::int`,
+    })
+    .from(readingProgress)
+    .innerJoin(
+      worldReferences,
+      eq(worldReferences.bookId, readingProgress.bookId),
+    )
+    .where(eq(worldReferences.status, "completed"));
+
+  const amortizationRatio =
+    analyzedBooks > 0 ? readerBookPairs / analyzedBooks : 0;
+
+  const todayStart = startOfUtcDay(new Date());
+  const [{ requestsToday }] = await db
+    .select({ requestsToday: sql<number>`count(*)::int` })
+    .from(usageEvents)
+    .where(gte(usageEvents.createdAt, todayStart));
+  const headroomPct = Math.max(
+    0,
+    Math.round(
+      ((GEMINI_FREE_TIER_RPD - requestsToday) / GEMINI_FREE_TIER_RPD) * 100,
+    ),
+  );
+
+  const [{ booksOpened }] = await db
+    .select({ booksOpened: sql<number>`count(*)::int` })
+    .from(readingProgress);
+
+  const [{ chatMessagesTotal }] = await db
+    .select({ chatMessagesTotal: sql<number>`count(*)::int` })
+    .from(chatMessages);
+
+  const [{ startedCount, finishedCount }] = await db
+    .select({
+      startedCount: sql<number>`count(*)::int`,
+      finishedCount: sql<number>`count(*) filter (
+        where ${books.totalChunks} is not null
+          and ${readingProgress.frontierChunk} >= ${books.totalChunks} - 1
+      )::int`,
+    })
+    .from(readingProgress)
+    .innerJoin(books, eq(books.id, readingProgress.bookId));
+
+  const completionRatePct =
+    startedCount > 0 ? Math.round((finishedCount / startedCount) * 100) : 0;
+
+  return {
+    costByBookDay,
+    totalSpendUsd,
+    amortizationRatio,
+    freeTier: {
+      requestsToday,
+      dailyLimit: GEMINI_FREE_TIER_RPD,
+      headroomPct,
+    },
+    engagement: {
+      booksOpened,
+      chatMessagesTotal,
+      completionRatePct,
+    },
+  };
+}

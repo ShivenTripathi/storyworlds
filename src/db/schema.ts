@@ -414,6 +414,45 @@ export const storedFiles = pgTable("stored_files", {
 });
 
 // ---------------------------------------------------------------------------
+// achievements
+// ---------------------------------------------------------------------------
+export const achievements = pgTable(
+  "achievements",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    // 'full_cast' | 'cartographer' | 'deep_reader' | 'streak_7' | 'first_light' | ...
+    kind: text("kind").notNull(),
+    bookId: uuid("book_id").references(() => books.id, {
+      onDelete: "cascade",
+    }),
+    // Free-form reference for the achievement (e.g. an entity slug for a
+    // per-character unlock); null for book-level or account-level kinds.
+    refId: text("ref_id"),
+    unlockedAt: timestamp("unlocked_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    metadata: jsonb("metadata"),
+  },
+  (table) => [
+    // Unlocks once per (user, kind, book, ref). Note: Postgres treats NULLs
+    // as distinct in unique constraints (same latent behavior as
+    // chatSessions' nullable-userId unique above), so an account-level kind
+    // with bookId/refId both null could in principle insert more than one
+    // row; callers should still upsert defensively (onConflictDoNothing)
+    // rather than relying on the constraint alone for those rows.
+    unique("achievements_user_kind_book_ref_unique").on(
+      table.userId,
+      table.kind,
+      table.bookId,
+      table.refId,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // apiKeys
 // ---------------------------------------------------------------------------
 export const apiKeys = pgTable("api_keys", {
