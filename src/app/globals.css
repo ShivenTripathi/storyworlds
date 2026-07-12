@@ -416,3 +416,90 @@ h6 {
     width: 1.6rem;
   }
 }
+
+/* ── Reading column typography ──────────────────────────────────────────────
+   Turns cleaned chunk text into something that reads like a set book: a proper
+   drop cap at chapter openings, centered title-page display lines, engraved
+   scene ornaments, and comfortable paragraph rhythm. Colors inherit from the
+   reader theme (--reader-fg) set on the reader container. */
+.reader-prose {
+  text-rendering: optimizeLegibility;
+  font-kerning: normal;
+  hyphens: auto;
+}
+
+/* Body paragraphs: first-line indent in the classic book manner, no gap —
+   except the first, and any paragraph opening a chapter (drop cap). */
+.reader-prose .reader-para {
+  margin: 0;
+  text-indent: 1.4em;
+}
+.reader-prose > .reader-para:first-child,
+.reader-prose > .reader-chapter + .reader-para,
+.reader-prose > .reader-ornament + .reader-para {
+  text-indent: 0;
+}
+/* A little air after display/heading/ornament blocks. */
+.reader-prose > .reader-display,
+.reader-prose > .reader-display-title,
+.reader-prose > .reader-chapter,
+.reader-prose > .reader-ornament {
+  margin-block: 1.4em;
+}
+.reader-prose > .reader-para + .reader-para {
+  margin-top: 0;
+}
+
+/* Chapter drop cap — a large Fraunces initial the text wraps around. */
+.reader-dropcap {
+  float: left;
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-weight: 500;
+  font-size: 3.4em;
+  line-height: 0.72;
+  padding: 0.06em 0.08em 0 0;
+  margin-right: 0.02em;
+  color: var(--world-accent, var(--reader-fg));
+}
+
+/* Chapter heading. */
+.reader-chapter {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-size: 1.5em;
+  font-weight: 500;
+  text-align: center;
+  letter-spacing: 0.01em;
+  opacity: 0.92;
+}
+
+/* Title-page display lines (all-caps source lines). */
+.reader-display-title {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-size: 1.7em;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.reader-display {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.72em;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.62;
+}
+
+/* Scene/illustration marker in the source ([Illustration: …]) → a quiet
+   engraved fleuron rather than raw caption text. */
+.reader-ornament {
+  margin: 1.8em 0;
+  text-align: center;
+}
+.reader-ornament-mark {
+  display: inline-block;
+  font-size: 1.1em;
+  color: var(--world-accent, var(--reader-fg));
+  opacity: 0.5;
+}

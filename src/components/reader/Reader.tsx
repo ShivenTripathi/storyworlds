@@ -23,6 +23,12 @@ import {
   type ReaderSettingsState,
 } from "./settings";
 import type { BookSummary, ChunkPayload } from "./types";
+import {
+  formatChunk,
+  splitDropCap,
+  type Block,
+  type TextRun,
+} from "@/domain/reader-format";
 
 const IDLE_HIDE_MS = 2500;
 const PROGRESS_DEBOUNCE_MS = 800;
@@ -340,15 +346,12 @@ export function Reader({ bookId }: ReaderProps) {
   const family = faceFamily(settings.face);
   const ch = measureCh(settings.measure);
 
-  const paragraphs = useMemo(() => {
-    if (!chunkData) return [];
-    return chunkData.text
-      .split(/\n{2,}/)
-      .map((p) => p.trim())
-      .filter(Boolean);
-  }, [chunkData]);
+  const blocks = useMemo(
+    () => (chunkData ? formatChunk(chunkData.text) : []),
+    [chunkData],
+  );
 
-  const isEmptyChunk = chunkData != null && paragraphs.length === 0;
+  const isEmptyChunk = chunkData != null && blocks.length === 0;
   const pageLabel =
     chunkData && totalChunks
       ? `Page ${currentChunk + 1} of ${totalChunks} · ${Math.round(
@@ -549,10 +552,10 @@ export function Reader({ bookId }: ReaderProps) {
                   fontSize: `${settings.fontSize}px`,
                   lineHeight: settings.lineHeight,
                 }}
-                className="space-y-[1em]"
+                className="reader-prose"
               >
-                {paragraphs.map((p, i) => (
-                  <p key={i}>{p}</p>
+                {blocks.map((block, i) => (
+                  <ReaderBlock key={i} block={block} />
                 ))}
               </div>
             </>
@@ -583,6 +586,59 @@ export function Reader({ bookId }: ReaderProps) {
       />
     </div>
   );
+}
+
+/** Renders a run list, honouring italic spans (from Gutenberg `_..._`). */
+function Runs({ runs }: { runs: TextRun[] }) {
+  return (
+    <>
+      {runs.map((r, i) =>
+        r.italic ? <em key={i}>{r.text}</em> : <span key={i}>{r.text}</span>,
+      )}
+    </>
+  );
+}
+
+/** One typographic block of the reading column. */
+function ReaderBlock({ block }: { block: Block }) {
+  switch (block.kind) {
+    case "display":
+      return (
+        <p
+          className={
+            block.level === "title" ? "reader-display-title" : "reader-display"
+          }
+        >
+          {block.text}
+        </p>
+      );
+    case "heading":
+      return <h2 className="reader-chapter">{block.text}</h2>;
+    case "illustration":
+      return (
+        <figure className="reader-ornament" aria-hidden="true">
+          <span className="reader-ornament-mark">❧</span>
+        </figure>
+      );
+    case "para": {
+      if (block.dropCap) {
+        const split = splitDropCap(block.runs);
+        if (split) {
+          return (
+            <p className="reader-para">
+              <span className="reader-dropcap">{split.cap}</span>
+              <Runs runs={split.rest} />
+            </p>
+          );
+        }
+      }
+      return (
+        <p className="reader-para">
+          <Runs runs={block.runs} />
+        </p>
+      );
+    }
+  }
 }
 
 function ReaderSkeleton() {

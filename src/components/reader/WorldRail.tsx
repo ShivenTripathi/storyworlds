@@ -137,6 +137,11 @@ export function WorldRail({
       style={{
         background: "var(--world-surface)",
         borderColor: "var(--world-frame)",
+        // The rail is nested inside the reader, which sets color:var(--reader-fg)
+        // (dark in the Paper/Sepia reading themes). Reset to the app foreground
+        // so text stays legible on the dark --world-surface regardless of the
+        // reader's page theme.
+        color: "var(--foreground)",
       }}
     >
       <div className="flex items-center justify-between px-4 py-3">
