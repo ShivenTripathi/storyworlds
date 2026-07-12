@@ -89,6 +89,16 @@
   /* A warm dark translucent scrim for overlays (lightboxes, image captions,
      modal backdrops) — never a literal black/gray. */
   --scrim: color-mix(in srgb, var(--ink-950) 65%, transparent);
+
+  /* Highlight swatches (src/components/reader) — semantic aliases onto the
+     existing primitive hues rather than new colors, so highlighter marks stay
+     inside the EX LIBRIS palette. Rendered as a `color-mix` with the current
+     `--reader-bg` (see .reader-mark below) so the same token reads as a
+     bright pastel on the light Paper theme and a muted tint on Ink/Dusk. */
+  --highlight-yellow: var(--ember-300);
+  --highlight-green: var(--sage-500);
+  --highlight-blue: var(--lapis-500);
+  --highlight-pink: var(--oxblood-500);
 }
 
 /* "Reading Room" — the light palette, opted into via data attribute */
@@ -515,6 +525,35 @@ h6 {
   font-size: 1.1em;
   color: var(--world-accent, var(--reader-fg));
   opacity: 0.5;
+}
+
+/* A reader's own highlight, rendered behind the matching text (see
+   src/domain/highlight-match.ts + src/components/reader/HighlightMark.tsx).
+   `--mark-color` is set inline per-instance to one of the --highlight-*
+   tokens; blending with --reader-bg keeps it legible across every reading
+   theme (Paper/Sepia/Dusk/Ink) without a separate palette per theme. */
+.reader-mark {
+  background: color-mix(
+    in srgb,
+    var(--mark-color, var(--highlight-yellow)) 38%,
+    var(--reader-bg)
+  );
+  color: inherit;
+  border-radius: 0.15em;
+  padding-block: 0.05em;
+  cursor: pointer;
+}
+.reader-mark:hover,
+.reader-mark:focus-visible {
+  background: color-mix(
+    in srgb,
+    var(--mark-color, var(--highlight-yellow)) 55%,
+    var(--reader-bg)
+  );
+}
+.reader-mark:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
 }
 
 /* Section number (bare "I.") — quieter than a chapter title. */

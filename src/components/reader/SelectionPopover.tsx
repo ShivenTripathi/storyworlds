@@ -2,6 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { buildShareUrls } from "@/components/share/ShareButton";
+import { createHighlight as createHighlightRequest } from "./api";
+import type { HighlightDto } from "./types";
+
+/** The reader's four highlighter colors — see the `--highlight-*` tokens in
+ * globals.css (semantic aliases onto the existing EX LIBRIS palette). */
+export const HIGHLIGHT_COLORS = [
+  { id: "yellow", label: "Yellow" },
+  { id: "green", label: "Green" },
+  { id: "blue", label: "Blue" },
+  { id: "pink", label: "Pink" },
+] as const;
 
 interface SelectionPopoverProps {
   /** Only selections whose range lives inside this element open the popover
@@ -13,10 +24,17 @@ interface SelectionPopoverProps {
   bookId: string;
   bookTitle: string;
   bookAuthor?: string | null;
+  /** The chunk currently on screen — every highlight/note created from this
+   * popover is stamped with it (the page the reader is actually looking at,
+   * not necessarily where a stale selection range might drift to). */
+  chunkIdx: number;
+  /** Fired once a highlight (with or without a note) is created, so the
+   * Reader can append it to its in-memory list without a re-fetch. */
+  onHighlightCreated: (highlight: HighlightDto) => void;
 }
 
 type Selection = { text: string; rect: DOMRect };
-type Mode = "actions" | "define" | "wiki";
+type Mode = "actions" | "define" | "wiki" | "highlight" | "note";
 
 type DefinitionEntry = { partOfSpeech: string; definition: string };
 type LookupState<T> =
@@ -123,6 +141,8 @@ export function SelectionPopover({
   bookId,
   bookTitle,
   bookAuthor,
+  chunkIdx,
+  onHighlightCreated,
 }: SelectionPopoverProps) {
   const [selection, setSelection] = useState<Selection | null>(null);
   const [mode, setMode] = useState<Mode>("actions");
@@ -136,9 +156,19 @@ export function SelectionPopover({
     "idle",
   );
   const [origin, setOrigin] = useState("");
+  const [highlightSaving, setHighlightSaving] = useState(false);
+  const [highlightError, setHighlightError] = useState(false);
+  const [noteText, setNoteText] = useState("");
 
   const popoverRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const noteInputRef = useRef<HTMLTextAreaElement>(null);
+
+  // Focus the note textarea the moment its panel opens — a deliberate
+  // imperative focus move on mode change, not state derivation.
+  useEffect(() => {
+    if (mode === "note") noteInputRef.current?.focus();
+  }, [mode]);
 
   // Origin is only known client-side — read after mount, same convention as
   // ShareButton (avoids an SSR/client markup mismatch).
@@ -174,6 +204,9 @@ export function SelectionPopover({
     setDefineState({ status: "idle" });
     setWikiState({ status: "idle" });
     setShareState("idle");
+    setHighlightSaving(false);
+    setHighlightError(false);
+    setNoteText("");
   }, [textContainerRef]);
 
   useEffect(() => {
@@ -241,6 +274,50 @@ export function SelectionPopover({
     setWikiState({ status: "loading" });
     const result = await fetchWikiSummary(selection.text);
     setWikiState(result);
+  }
+
+  /** Creates a highlight in `color` with no note — the quick "Highlight" path. */
+  async function handleHighlight(color: string) {
+    if (!selection || highlightSaving) return;
+    setHighlightSaving(true);
+    setHighlightError(false);
+    try {
+      const { highlight } = await createHighlightRequest(bookId, {
+        chunkIdx,
+        text: selection.text,
+        color,
+      });
+      onHighlightCreated(highlight);
+      setSelection(null);
+      window.getSelection()?.removeAllRanges();
+    } catch {
+      setHighlightError(true);
+    } finally {
+      setHighlightSaving(false);
+    }
+  }
+
+  /** Creates a highlight (default yellow) with the note text attached. */
+  async function handleSaveNote() {
+    if (!selection || highlightSaving) return;
+    const note = noteText.trim();
+    if (!note) return;
+    setHighlightSaving(true);
+    setHighlightError(false);
+    try {
+      const { highlight } = await createHighlightRequest(bookId, {
+        chunkIdx,
+        text: selection.text,
+        note,
+      });
+      onHighlightCreated(highlight);
+      setSelection(null);
+      window.getSelection()?.removeAllRanges();
+    } catch {
+      setHighlightError(true);
+    } finally {
+      setHighlightSaving(false);
+    }
   }
 
   function quoteShareUrls() {
@@ -334,6 +411,11 @@ export function SelectionPopover({
 
       {mode === "actions" ? (
         <div className="flex flex-wrap gap-2">
+          <ActionButton
+            label="Highlight"
+            onClick={() => setMode("highlight")}
+          />
+          <ActionButton label="Add note" onClick={() => setMode("note")} />
           <ActionButton label="Define" onClick={() => void handleDefine()} />
           <ActionButton label="Wikipedia" onClick={() => void handleWiki()} />
           {canNativeShare ? (
@@ -353,6 +435,73 @@ export function SelectionPopover({
             onClick={() => void handleCopyQuote()}
           />
         </div>
+      ) : mode === "highlight" ? (
+        <LookupPanel title="Highlight" onBack={() => setMode("actions")}>
+          <div className="flex flex-wrap gap-2">
+            {HIGHLIGHT_COLORS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                aria-label={`Highlight in ${c.label.toLowerCase()}`}
+                disabled={highlightSaving}
+                onClick={() => void handleHighlight(c.id)}
+                className="flex h-11 min-w-11 items-center gap-2 rounded-md border px-3 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none disabled:opacity-50"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <span
+                  aria-hidden="true"
+                  className="h-4 w-4 shrink-0 rounded-full"
+                  style={{ background: `var(--highlight-${c.id})` }}
+                />
+                {c.label}
+              </button>
+            ))}
+          </div>
+          {highlightError ? (
+            <p className="mt-2 font-ui text-xs opacity-60">
+              Couldn&apos;t save that highlight. Try again in a moment.
+            </p>
+          ) : null}
+        </LookupPanel>
+      ) : mode === "note" ? (
+        <LookupPanel title="Add note" onBack={() => setMode("actions")}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void handleSaveNote();
+            }}
+            className="space-y-2"
+          >
+            <label htmlFor="selection-note" className="sr-only">
+              Note
+            </label>
+            <textarea
+              id="selection-note"
+              ref={noteInputRef}
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Your thoughts on this passage…"
+              rows={3}
+              className="w-full resize-none rounded-md border bg-transparent px-2 py-1.5 font-reading text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+              style={{ borderColor: "var(--border)" }}
+            />
+            <div className="flex items-center gap-2">
+              <button
+                type="submit"
+                disabled={highlightSaving || noteText.trim().length === 0}
+                className="flex min-h-11 items-center rounded-md border px-3 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none disabled:opacity-50"
+                style={{ borderColor: "var(--border)" }}
+              >
+                {highlightSaving ? "Saving…" : "Save note"}
+              </button>
+              {highlightError ? (
+                <p className="font-ui text-xs opacity-60">
+                  Couldn&apos;t save. Try again.
+                </p>
+              ) : null}
+            </div>
+          </form>
+        </LookupPanel>
       ) : mode === "define" ? (
         <LookupPanel title="Definition" onBack={() => setMode("actions")}>
           {defineState.status === "loading" ? (

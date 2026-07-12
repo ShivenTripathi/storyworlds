@@ -71,6 +71,13 @@
       "when": 1783885065175,
       "tag": "0009_dear_the_stranger",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783887758733,
+      "tag": "0010_blushing_luckman",
+      "breakpoints": true
     }
   ]
 }

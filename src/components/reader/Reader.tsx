@@ -3,14 +3,21 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addBookmark as addBookmarkRequest,
+  deleteBookmark as deleteBookmarkRequest,
   fetchBook,
+  fetchBookmarks,
   fetchChunk,
+  fetchHighlights,
   fetchToc,
   putProgress,
   progressRequest,
   ReaderApiError,
 } from "./api";
+import { BookmarkToggle } from "./BookmarkToggle";
 import { ChapterPlate } from "./ChapterPlate";
+import { HighlightEditor } from "./HighlightEditor";
+import { NotebookMenu } from "./NotebookMenu";
 import { ReaderSettings } from "./ReaderSettings";
 import { SelectionPopover } from "./SelectionPopover";
 import { SoundscapeControl } from "./SoundscapeControl";
@@ -32,13 +39,19 @@ import {
   themeSwatch,
   type ReaderSettingsState,
 } from "./settings";
-import type { BookSummary, ChunkPayload, TocResponse } from "./types";
+import type {
+  BookmarkDto,
+  BookSummary,
+  ChunkPayload,
+  HighlightDto,
+  TocResponse,
+} from "./types";
 import {
-  formatChunk,
-  splitDropCap,
-  type Block,
-  type TextRun,
-} from "@/domain/reader-format";
+  applyHighlightsToRuns,
+  type HighlightedRun,
+  type HighlightSource,
+} from "@/domain/highlight-match";
+import { formatChunk, splitDropCap, type Block } from "@/domain/reader-format";
 
 const IDLE_HIDE_MS = 2500;
 const PROGRESS_DEBOUNCE_MS = 800;
@@ -84,6 +97,24 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
   // consumers render their loading/absent state rather than guessing.
   const [tocData, setTocData] = useState<TocResponse | null>(null);
 
+  // The reader's own highlights (+ notes) and bookmarks for this book,
+  // fetched once in the background (see the effects below) and kept in sync
+  // in-memory as the reader creates/edits/removes them — no separate
+  // per-page fetch, since a book realistically has at most a few hundred of
+  // these. Empty arrays (rather than null) while loading: neither renders a
+  // "no highlights" empty state, they just haven't appeared yet.
+  const [highlights, setHighlights] = useState<HighlightDto[]>([]);
+  const [bookmarks, setBookmarks] = useState<BookmarkDto[]>([]);
+  // The highlight (+ its on-screen `<mark>` rect) currently open in the
+  // click-to-edit popover; null when none is open.
+  const [highlightEditTarget, setHighlightEditTarget] = useState<{
+    highlight: HighlightDto;
+    rect: DOMRect;
+  } | null>(null);
+  // True while a bookmark toggle request is in flight — disables the button
+  // for that span so a rapid double-click can't race two opposite requests.
+  const [bookmarkToggling, setBookmarkToggling] = useState(false);
+
   // Only start fetching the scene overlay once this page's text has settled
   // on screen for a beat — avoids firing a request for every page flown past
   // while paging quickly.
@@ -118,6 +149,30 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
     fetchToc(bookId)
       .then((data) => {
         if (!cancelled) setTocData(data);
+      })
+      .catch(() => {
+        // best-effort — see comment above
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [bookId]);
+
+  // Background, one-shot-per-book fetch of the reader's own highlights and
+  // bookmarks — best-effort: the Notebook panel just shows an empty list if
+  // either fails, never blocking reading.
+  useEffect(() => {
+    let cancelled = false;
+    fetchHighlights(bookId)
+      .then(({ highlights: rows }) => {
+        if (!cancelled) setHighlights(rows);
+      })
+      .catch(() => {
+        // best-effort — see comment above
+      });
+    fetchBookmarks(bookId)
+      .then(({ bookmarks: rows }) => {
+        if (!cancelled) setBookmarks(rows);
       })
       .catch(() => {
         // best-effort — see comment above
@@ -341,6 +396,60 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
     [navigate, currentChunk],
   );
 
+  // ---------------------------------------------------------------------
+  // Highlights + notes: created via SelectionPopover, edited/removed via
+  // HighlightEditor (opened by clicking a rendered `<mark>`). Both routes
+  // already round-tripped the API call themselves — these handlers only
+  // reconcile the in-memory list, no further requests.
+  // ---------------------------------------------------------------------
+  const handleHighlightCreated = useCallback((h: HighlightDto) => {
+    setHighlights((prev) => [...prev, h]);
+  }, []);
+  const handleHighlightUpdated = useCallback((h: HighlightDto) => {
+    setHighlights((prev) => prev.map((x) => (x.id === h.id ? h : x)));
+    setHighlightEditTarget(null);
+  }, []);
+  const handleHighlightDeleted = useCallback((id: string) => {
+    setHighlights((prev) => prev.filter((x) => x.id !== id));
+    setHighlightEditTarget(null);
+  }, []);
+  const handleHighlightMarkClick = useCallback(
+    (id: string, rect: DOMRect) => {
+      const highlight = highlights.find((h) => h.id === id);
+      if (highlight) setHighlightEditTarget({ highlight, rect });
+    },
+    [highlights],
+  );
+
+  // ---------------------------------------------------------------------
+  // Bookmarks: a single toggle button in the header for "this page", plus
+  // list-managed removal from the Notebook panel (see handleHighlightDeleted
+  // above for the parallel pattern).
+  // ---------------------------------------------------------------------
+  const currentBookmark = bookmarks.find((b) => b.chunkIdx === currentChunk);
+  const toggleBookmark = useCallback(async () => {
+    if (bookmarkToggling) return;
+    setBookmarkToggling(true);
+    try {
+      if (currentBookmark) {
+        await deleteBookmarkRequest(bookId, currentBookmark.id);
+        setBookmarks((prev) => prev.filter((b) => b.id !== currentBookmark.id));
+      } else {
+        const { bookmark } = await addBookmarkRequest(bookId, {
+          chunkIdx: currentChunk,
+        });
+        setBookmarks((prev) => [...prev, bookmark]);
+      }
+    } catch {
+      // best-effort — the toggle just didn't take; the reader can retry
+    } finally {
+      setBookmarkToggling(false);
+    }
+  }, [bookId, bookmarkToggling, currentBookmark, currentChunk]);
+  const handleBookmarkDeleted = useCallback((id: string) => {
+    setBookmarks((prev) => prev.filter((b) => b.id !== id));
+  }, []);
+
   // Auto-hiding chrome
   const wakeChrome = useCallback(() => {
     setChromeVisible(true);
@@ -425,6 +534,17 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
   const blocks = useMemo(
     () => (chunkData ? formatChunk(chunkData.text) : []),
     [chunkData],
+  );
+
+  // Highlights matching the current chunk, mapped to the plain source shape
+  // applyHighlightsToRuns expects — see src/domain/highlight-match.ts for why
+  // this is a text match rather than stored offsets.
+  const highlightsForChunk = useMemo(
+    () =>
+      highlights
+        .filter((h) => h.chunkIdx === currentChunk)
+        .map((h) => ({ id: h.id, text: h.text, color: h.color })),
+    [highlights, currentChunk],
   );
 
   const isEmptyChunk = chunkData != null && blocks.length === 0;
@@ -538,6 +658,20 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
             currentChunk={currentChunk}
             totalChunks={totalChunks}
             onNavigate={navigate}
+          />
+          <BookmarkToggle
+            bookmarked={currentBookmark != null}
+            onToggle={() => void toggleBookmark()}
+            disabled={bookmarkToggling}
+          />
+          <NotebookMenu
+            bookId={bookId}
+            bookTitle={book?.title ?? ""}
+            bookmarks={bookmarks}
+            highlights={highlights}
+            onNavigate={navigate}
+            onBookmarkDeleted={handleBookmarkDeleted}
+            onHighlightDeleted={handleHighlightDeleted}
           />
           <button
             type="button"
@@ -661,7 +795,12 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
                   .join(" ")}
               >
                 {blocks.map((block, i) => (
-                  <ReaderBlock key={i} block={block} />
+                  <ReaderBlock
+                    key={i}
+                    block={block}
+                    highlights={highlightsForChunk}
+                    onHighlightClick={handleHighlightMarkClick}
+                  />
                 ))}
               </div>
             </>
@@ -708,8 +847,18 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
           bookId={bookId}
           bookTitle={book?.title ?? ""}
           bookAuthor={book?.author}
+          chunkIdx={currentChunk}
+          onHighlightCreated={handleHighlightCreated}
         />
       ) : null}
+
+      <HighlightEditor
+        bookId={bookId}
+        target={highlightEditTarget}
+        onClose={() => setHighlightEditTarget(null)}
+        onUpdated={handleHighlightUpdated}
+        onDeleted={handleHighlightDeleted}
+      />
 
       <WorldRail
         bookId={bookId}
@@ -726,19 +875,74 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
   );
 }
 
-/** Renders a run list, honouring italic spans (from Gutenberg `_..._`). */
-function Runs({ runs }: { runs: TextRun[] }) {
+/**
+ * Renders a run list, honouring italic spans (from Gutenberg `_..._`) and
+ * rendering any run tagged by `applyHighlightsToRuns` (a `highlightId`) as a
+ * clickable `<mark>` — clicking/activating it opens HighlightEditor via
+ * `onHighlightClick`, passing the mark's own bounding rect so the popover
+ * anchors to where it was actually clicked.
+ */
+function Runs({
+  runs,
+  onHighlightClick,
+}: {
+  runs: HighlightedRun[];
+  onHighlightClick?: (id: string, rect: DOMRect) => void;
+}) {
   return (
     <>
-      {runs.map((r, i) =>
-        r.italic ? <em key={i}>{r.text}</em> : <span key={i}>{r.text}</span>,
-      )}
+      {runs.map((r, i) => {
+        if (!r.highlightId) {
+          return r.italic ? (
+            <em key={i}>{r.text}</em>
+          ) : (
+            <span key={i}>{r.text}</span>
+          );
+        }
+        const highlightId = r.highlightId;
+        function activate(e: { currentTarget: HTMLElement }) {
+          onHighlightClick?.(
+            highlightId,
+            e.currentTarget.getBoundingClientRect(),
+          );
+        }
+        return (
+          <mark
+            key={i}
+            role="button"
+            tabIndex={0}
+            className="reader-mark"
+            style={
+              {
+                "--mark-color": `var(--highlight-${r.color ?? "yellow"})`,
+              } as React.CSSProperties
+            }
+            onClick={activate}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                activate(e);
+              }
+            }}
+          >
+            {r.italic ? <em>{r.text}</em> : r.text}
+          </mark>
+        );
+      })}
     </>
   );
 }
 
 /** One typographic block of the reading column. */
-function ReaderBlock({ block }: { block: Block }) {
+function ReaderBlock({
+  block,
+  highlights,
+  onHighlightClick,
+}: {
+  block: Block;
+  highlights: HighlightSource[];
+  onHighlightClick: (id: string, rect: DOMRect) => void;
+}) {
   switch (block.kind) {
     case "display":
       return (
@@ -776,20 +980,21 @@ function ReaderBlock({ block }: { block: Block }) {
         </figure>
       );
     case "para": {
+      const runs = applyHighlightsToRuns(block.runs, highlights);
       if (block.dropCap) {
-        const split = splitDropCap(block.runs);
+        const split = splitDropCap(runs);
         if (split) {
           return (
             <p className="reader-para">
               <span className="reader-dropcap">{split.cap}</span>
-              <Runs runs={split.rest} />
+              <Runs runs={split.rest} onHighlightClick={onHighlightClick} />
             </p>
           );
         }
       }
       return (
         <p className="reader-para">
-          <Runs runs={block.runs} />
+          <Runs runs={runs} onHighlightClick={onHighlightClick} />
         </p>
       );
     }

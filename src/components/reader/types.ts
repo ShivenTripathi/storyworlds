@@ -45,3 +45,38 @@ export interface TocResponse {
   chapters: TocChapter[];
   wordCounts: number[];
 }
+
+/** A highlighted passage, optionally with a note attached — mirrors
+ * src/services/annotations.ts's HighlightDto. Matched onto the current
+ * chunk's text by string (see src/domain/highlight-match.ts), not stored
+ * offsets. */
+export interface HighlightDto {
+  id: string;
+  bookId: string;
+  chunkIdx: number;
+  text: string;
+  color: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/** A manually-saved reading spot — mirrors src/services/annotations.ts's
+ * BookmarkDto. */
+export interface BookmarkDto {
+  id: string;
+  bookId: string;
+  chunkIdx: number;
+  label: string | null;
+  createdAt: string;
+}
+
+/** One frontier-gated search hit — mirrors src/services/annotations.ts's
+ * SearchHit. `matchStart`/`matchLength` locate the match within `snippet`
+ * (not within the full chunk text) so the UI can bold it precisely. */
+export interface SearchHit {
+  chunkIdx: number;
+  pageNumber: number | null;
+  snippet: string;
+  matchStart: number;
+  matchLength: number;
+}

@@ -321,6 +321,69 @@ export const readingProgress = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// highlights — a reader's own highlighted passages, optionally with a note
+// attached (a highlight-with-note IS how "notes" work — there is no separate
+// notes table). Per-user, private; cross-device sync is automatic (Clerk +
+// DB, same Whispersync-style pattern as `readingProgress`). Rendered by
+// matching `text` against the current chunk's rendered text (see
+// src/domain/highlight-match.ts) rather than stored character offsets —
+// offsets would be brittle across re-renders/reflow; string matching is
+// simpler and resilient (documented in Reader.tsx).
+// ---------------------------------------------------------------------------
+export const highlights = pgTable(
+  "highlights",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    bookId: uuid("book_id")
+      .notNull()
+      .references(() => books.id, { onDelete: "cascade" }),
+    chunkIdx: integer("chunk_idx").notNull(),
+    text: text("text").notNull(),
+    color: text("color").default("yellow").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("highlights_user_book_idx").on(table.userId, table.bookId)],
+);
+
+// ---------------------------------------------------------------------------
+// bookmarks — a reader's manually-saved reading spots, distinct from the
+// automatic `readingProgress.currentChunk` marker. One row per (user, book,
+// chunk): bookmarking the same page twice updates the label rather than
+// creating a duplicate (see src/services/annotations.ts addBookmark).
+// ---------------------------------------------------------------------------
+export const bookmarks = pgTable(
+  "bookmarks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    bookId: uuid("book_id")
+      .notNull()
+      .references(() => books.id, { onDelete: "cascade" }),
+    chunkIdx: integer("chunk_idx").notNull(),
+    label: text("label"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("bookmarks_user_book_idx").on(table.userId, table.bookId),
+    unique("bookmarks_user_book_chunk_unique").on(
+      table.userId,
+      table.bookId,
+      table.chunkIdx,
+    ),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // readingActivity — per-user-per-day rollup (NOT per-event) powering the
 // GitHub-contribution-style reading heatmap + streaks (src/domain/streak.ts,
 // src/services/analytics.ts getReadingActivity). `day` is a UTC calendar day

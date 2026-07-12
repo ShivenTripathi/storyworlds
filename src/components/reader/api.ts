@@ -1,7 +1,10 @@
 import type {
+  BookmarkDto,
   BookResponse,
   ChunkPayload,
+  HighlightDto,
   ReadingProgress,
+  SearchHit,
   TocResponse,
 } from "./types";
 
@@ -82,4 +85,85 @@ export function putProgress(
 ): Promise<ReadingProgress> {
   const { url, body } = progressRequest(bookId, currentChunk, frontierChunk);
   return request<ReadingProgress>(url, { method: "PUT", body });
+}
+
+// ---------------------------------------------------------------------------
+// Highlights + notes
+// ---------------------------------------------------------------------------
+
+export function fetchHighlights(
+  bookId: string,
+): Promise<{ highlights: HighlightDto[] }> {
+  return request(`/api/books/${bookId}/highlights`);
+}
+
+export function createHighlight(
+  bookId: string,
+  body: {
+    chunkIdx: number;
+    text: string;
+    color?: string;
+    note?: string | null;
+  },
+): Promise<{ highlight: HighlightDto }> {
+  return request(`/api/books/${bookId}/highlights`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function updateHighlight(
+  bookId: string,
+  id: string,
+  body: { color?: string; note?: string | null },
+): Promise<{ highlight: HighlightDto }> {
+  return request(`/api/books/${bookId}/highlights/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteHighlight(
+  bookId: string,
+  id: string,
+): Promise<void> {
+  await request(`/api/books/${bookId}/highlights/${id}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+
+export function fetchBookmarks(
+  bookId: string,
+): Promise<{ bookmarks: BookmarkDto[] }> {
+  return request(`/api/books/${bookId}/bookmarks`);
+}
+
+export function addBookmark(
+  bookId: string,
+  body: { chunkIdx: number; label?: string | null },
+): Promise<{ bookmark: BookmarkDto }> {
+  return request(`/api/books/${bookId}/bookmarks`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteBookmark(
+  bookId: string,
+  id: string,
+): Promise<void> {
+  await request(`/api/books/${bookId}/bookmarks/${id}`, { method: "DELETE" });
+}
+
+// ---------------------------------------------------------------------------
+// Frontier-gated in-book search
+// ---------------------------------------------------------------------------
+
+export function searchBook(
+  bookId: string,
+  q: string,
+): Promise<{ results: SearchHit[] }> {
+  return request(`/api/books/${bookId}/search?q=${encodeURIComponent(q)}`);
 }
