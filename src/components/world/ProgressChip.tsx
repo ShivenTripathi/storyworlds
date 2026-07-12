@@ -14,7 +14,7 @@ export function ProgressChip({ introducedAtChunk, label }: ProgressChipProps) {
 
   return (
     <span
-      className="eyebrow inline-flex items-center rounded-full border px-2 py-0.5"
+      className="eyebrow inline-flex shrink-0 items-center self-start rounded-full border px-2 py-0.5 whitespace-nowrap"
       style={{ borderColor: "var(--world-frame)" }}
     >
       {text}

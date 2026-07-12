@@ -503,3 +503,71 @@ h6 {
   color: var(--world-accent, var(--reader-fg));
   opacity: 0.5;
 }
+
+/* Section number (bare "I.") — quieter than a chapter title. */
+.reader-section {
+  font-family: var(--font-display), ui-serif, Georgia, serif;
+  font-size: 1.05em;
+  font-weight: 500;
+  text-align: center;
+  opacity: 0.55;
+  margin-block: 1.2em 0.6em;
+}
+
+/* Table of contents — a real list instead of a run-on paragraph. */
+.reader-toc {
+  margin-block: 1.2em;
+}
+.reader-toc ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55em;
+}
+.reader-toc li {
+  display: grid;
+  grid-template-columns: 2.4em 1fr;
+  align-items: baseline;
+  gap: 0.6em;
+}
+.reader-toc-marker {
+  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.7em;
+  letter-spacing: 0.06em;
+  text-align: right;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+}
+.reader-toc-title {
+  font-family: var(--font-reading), ui-serif, Georgia, serif;
+}
+
+/* ── Two-page "spread" reading mode ─────────────────────────────────────────
+   The chunk flows into two columns with a center gutter rule, like an open
+   book. Headings, drop-cap openings, toc and figures never split across the
+   gutter. Falls back to a single column when there isn't room. */
+.reader-prose--spread {
+  column-count: 2;
+  column-gap: clamp(2rem, 4vw, 4rem);
+  column-rule: 1px solid var(--world-frame);
+  column-fill: balance;
+}
+.reader-prose--spread > * {
+  break-inside: avoid-column;
+}
+.reader-prose--spread > .reader-para {
+  break-inside: auto; /* long paragraphs may flow across the gutter */
+}
+.reader-prose--spread > .reader-chapter,
+.reader-prose--spread > .reader-display-title,
+.reader-prose--spread > .reader-toc,
+.reader-prose--spread > .reader-ornament {
+  column-span: all; /* titles and the TOC span the whole spread */
+}
+@media (max-width: 900px) {
+  .reader-prose--spread {
+    column-count: 1;
+    column-rule: none;
+  }
+}

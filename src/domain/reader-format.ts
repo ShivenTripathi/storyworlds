@@ -17,17 +17,39 @@ export interface TextRun {
   italic?: boolean;
 }
 
+export interface TocEntry {
+  marker: string;
+  title: string;
+}
+
 export type Block =
   | { kind: "display"; level: "title" | "meta"; text: string }
-  | { kind: "heading"; text: string }
+  | { kind: "heading"; text: string; section?: boolean }
+  | { kind: "toc"; entries: TocEntry[] }
   | { kind: "illustration"; caption: string | null }
   | { kind: "para"; runs: TextRun[]; dropCap?: boolean };
 
 const ILLUSTRATION_RE = /^\[illustrations?:?\s*(.*?)\]$/i;
-// A chapter marker: "CHAPTER I", "CHAPTER 1", "CHAPTER ONE", or a bare roman
-// numeral / "I." on its own line.
+// A chapter/section marker: "CHAPTER I", "CHAPTER ONE", "CONTENTS", "PROLOGUE",
+// a bare roman numeral, or a titled roman-numeral heading.
 const HEADING_RE =
-  /^(chapter\b.*|[ivxlcdm]{1,7}\.?|[ivxlcdm]{1,7}\s+.{0,60})$/i;
+  /^(chapter\b.*|part\b.*|book\b.*|prologue|epilogue|contents|[ivxlcdm]{1,7}\.?|[ivxlcdm]{1,7}\s+.{0,60})$/i;
+// A bare section number on its own line ("I.", "IV.") — styled quieter than a
+// full chapter title so it doesn't compete with it.
+const SECTION_RE = /^[ivxlcdm]{1,7}\.?$/i;
+// A run-together table of contents: three or more "<roman>. Title" entries in
+// one paragraph, e.g. "I. A Scandal in Bohemia II. The Red-Headed League …".
+const TOC_ENTRY_RE = /\b([IVXLCDM]{1,7})\.\s+(.+?)(?=\s+[IVXLCDM]{1,7}\.\s|$)/g;
+
+function parseToc(text: string): TocEntry[] | null {
+  const entries: TocEntry[] = [];
+  let m: RegExpExecArray | null;
+  TOC_ENTRY_RE.lastIndex = 0;
+  while ((m = TOC_ENTRY_RE.exec(text)) !== null) {
+    entries.push({ marker: m[1], title: m[2].trim() });
+  }
+  return entries.length >= 3 ? entries : null;
+}
 
 /** Removes Gutenberg editorial bracket-wrappers around italic spans. */
 function unwrapBrackets(text: string): string {
@@ -81,9 +103,20 @@ export function formatChunk(text: string): Block[] {
       continue;
     }
 
+    // A run-together table of contents → a real list, one entry per line.
+    const toc = parseToc(para);
+    if (toc) {
+      blocks.push({ kind: "toc", entries: toc });
+      continue;
+    }
+
     if (isHeading(para)) {
-      blocks.push({ kind: "heading", text: unwrapBrackets(para).trim() });
-      pendingDropCap = true; // the next prose paragraph opens the chapter
+      const text = unwrapBrackets(para).trim();
+      const section = SECTION_RE.test(text);
+      blocks.push({ kind: "heading", text, section: section || undefined });
+      // A titled chapter heading opens the chapter (drop-cap the next prose); a
+      // bare section number ("I.") does not restart it.
+      if (!section) pendingDropCap = true;
       continue;
     }
 

@@ -51,6 +51,30 @@ describe("formatChunk", () => {
     const blocks = formatChunk("A plain sentence.\n\nAnother plain sentence.");
     expect(blocks.every((b) => b.kind !== "para" || !b.dropCap)).toBe(true);
   });
+
+  it("parses a run-together table of contents into entries", () => {
+    const [block] = formatChunk(
+      "I. A Scandal in Bohemia II. The Red-Headed League III. A Case of Identity IV. The Boscombe Valley Mystery",
+    );
+    expect(block.kind).toBe("toc");
+    if (block.kind !== "toc") throw new Error("expected toc");
+    expect(block.entries).toHaveLength(4);
+    expect(block.entries[0]).toEqual({
+      marker: "I",
+      title: "A Scandal in Bohemia",
+    });
+    expect(block.entries[3].title).toBe("The Boscombe Valley Mystery");
+  });
+
+  it("marks a bare roman-numeral line as a section (no drop cap after)", () => {
+    const blocks = formatChunk(
+      "I.\n\nTo Sherlock Holmes she is always the woman.",
+    );
+    expect(blocks[0]).toMatchObject({ kind: "heading", section: true });
+    // A bare section number does not open a chapter, so no drop cap.
+    expect(blocks[1]).toMatchObject({ kind: "para" });
+    expect((blocks[1] as { dropCap?: boolean }).dropCap).toBeUndefined();
+  });
 });
 
 describe("splitDropCap", () => {

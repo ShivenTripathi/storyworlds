@@ -22,11 +22,7 @@ export const READER_THEMES: ReaderThemeSwatch[] = [
 ];
 
 export type FaceId =
-  | "literata"
-  | "source-serif"
-  | "atkinson"
-  | "georgia"
-  | "opendyslexic";
+  "literata" | "source-serif" | "atkinson" | "georgia" | "opendyslexic";
 
 export interface FaceOption {
   id: FaceId;
@@ -75,6 +71,13 @@ export const LINE_HEIGHTS = [1.5, 1.65, 1.8, 2.0] as const;
 export const FONT_SIZE_MIN = 16;
 export const FONT_SIZE_MAX = 24;
 
+export type PageViewId = "single" | "spread";
+
+export const PAGE_VIEWS: { id: PageViewId; label: string }[] = [
+  { id: "single", label: "Single" },
+  { id: "spread", label: "Spread" },
+];
+
 export interface ReaderSettingsState {
   v: 1;
   theme: ReaderThemeId;
@@ -82,6 +85,8 @@ export interface ReaderSettingsState {
   fontSize: number;
   lineHeight: number;
   measure: MeasureId;
+  /** Optional (added after v1 shipped; defaulted on load for old clients). */
+  pageView?: PageViewId;
 }
 
 // Dusk closely matches the app's default dark "Fireside" card/foreground
@@ -93,6 +98,7 @@ export const DEFAULT_SETTINGS: ReaderSettingsState = {
   fontSize: 19,
   lineHeight: 1.65, // spec default 1.7, snapped to nearest step (1.65)
   measure: "comfort",
+  pageView: "single",
 };
 
 const STORAGE_KEY = "sw-reader-settings";
@@ -119,7 +125,10 @@ export function loadReaderSettings(): ReaderSettingsState {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return DEFAULT_SETTINGS;
     const parsed = JSON.parse(raw) as unknown;
-    return isValidSettings(parsed) ? parsed : DEFAULT_SETTINGS;
+    // Merge over defaults so fields added after v1 (e.g. pageView) are present.
+    return isValidSettings(parsed)
+      ? { ...DEFAULT_SETTINGS, ...parsed }
+      : DEFAULT_SETTINGS;
   } catch {
     return DEFAULT_SETTINGS;
   }

@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { WorldFormingCard } from "@/components/world/WorldFormingCard";
@@ -11,12 +12,54 @@ import { analyzeBook, fetchWorld } from "@/components/world/api";
 import type { World, WorldEntity } from "@/components/world/types";
 import type { OverlayState } from "./useOverlay";
 
-type WorldTab = "scene" | "cast" | "chat";
+type WorldTabId = "scene" | "cast" | "chat";
 
 function isCharacter(entity: WorldEntity): boolean {
   const k = entity.kind.toLowerCase().replace(/s$/, "");
   return k === "character" || k === "person";
 }
+
+/**
+ * Everything a rail panel needs to render itself. Adding a new tab (e.g.
+ * "Timeline") means: pick an id, write a small panel component that reads
+ * whatever slice of this it needs, and add one entry to `RAIL_TABS`.
+ */
+interface RailPanelContext {
+  bookId: string;
+  /** The page currently on screen in the reader. */
+  currentChunk: number;
+  world: World;
+  /** The reader's own overlay fetch for `currentChunk`, shared with ChapterPlate. */
+  overlay?: OverlayState;
+  /** Scene → Chat handoff: jumps to Chat with a character pre-selected and this question queued. */
+  onAskQuestion: (question: string) => void;
+  /** Opens (or switches to) a conversation with this character, on the Chat tab. */
+  onStartChat: (entityId: string) => void;
+  /** Chat tab's own picker/conversation state. */
+  chat: {
+    entityId: string | null;
+    initialMessage?: string;
+    onBack: () => void;
+  };
+}
+
+interface RailTabDef {
+  id: WorldTabId;
+  label: string;
+  /**
+   * "flow" (default): stacked content, natural height, `space-y-6` rhythm.
+   * "fill": the panel manages its own internal scrolling and needs the
+   * rail's full remaining height (e.g. it embeds a live chat thread).
+   */
+  layout?: "flow" | "fill";
+  render: (ctx: RailPanelContext) => ReactNode;
+}
+
+const RAIL_TABS: RailTabDef[] = [
+  { id: "scene", label: "Scene", render: ScenePanel },
+  { id: "cast", label: "Cast", render: CastPanel },
+  { id: "chat", label: "Chat", layout: "fill", render: ChatTabPanel },
+];
 
 interface WorldRailProps {
   bookId: string;
@@ -48,7 +91,7 @@ export function WorldRail({
   const [world, setWorld] = useState<World | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
-  const [tab, setTab] = useState<WorldTab>("scene");
+  const [tab, setTab] = useState<WorldTabId>("scene");
   const [chatEntityId, setChatEntityId] = useState<string | null>(null);
   const [chatInitialMessage, setChatInitialMessage] = useState<
     string | undefined
@@ -104,15 +147,20 @@ export function WorldRail({
     }
   }
 
+  /** Opens (or switches to) a conversation with `entityId` on the Chat tab. */
+  const startChat = useCallback((entityId: string, initialMessage?: string) => {
+    setChatEntityId(entityId);
+    setChatInitialMessage(initialMessage);
+    setTab("chat");
+  }, []);
+
   const handleAskQuestion = useCallback(
     (question: string) => {
       const firstCharacter = world?.entities?.find(isCharacter);
       if (!firstCharacter) return;
-      setChatEntityId(firstCharacter.id);
-      setChatInitialMessage(question);
-      setTab("chat");
+      startChat(firstCharacter.id, question);
     },
-    [world],
+    [world, startChat],
   );
 
   const status = world?.status ?? "none";
@@ -120,6 +168,26 @@ export function WorldRail({
     status === "pending" ||
     (job && (job.status === "queued" || job.status === "running"));
   const isFailed = status === "failed" || job?.status === "failed";
+
+  // The context every rail panel renders from.
+  const railCtx: RailPanelContext | null =
+    status === "completed" && world
+      ? {
+          bookId,
+          currentChunk,
+          world,
+          overlay,
+          onAskQuestion: handleAskQuestion,
+          onStartChat: startChat,
+          chat: {
+            entityId: chatEntityId,
+            initialMessage: chatInitialMessage,
+            onBack: () => setChatEntityId(null),
+          },
+        }
+      : null;
+
+  const activeTabDef = RAIL_TABS.find((t) => t.id === tab);
 
   return (
     <div
@@ -157,26 +225,22 @@ export function WorldRail({
         </button>
       </div>
 
-      {loaded && status === "completed" && world ? (
+      {loaded && railCtx ? (
         <div
+          role="tablist"
+          aria-label="World panel sections"
           className="flex items-center gap-4 border-b px-4 pb-2"
           style={{ borderColor: "var(--world-frame)" }}
         >
-          <TabButton
-            label="Scene"
-            active={tab === "scene"}
-            onClick={() => setTab("scene")}
-          />
-          <TabButton
-            label="Cast"
-            active={tab === "cast"}
-            onClick={() => setTab("cast")}
-          />
-          <TabButton
-            label="Chat"
-            active={tab === "chat"}
-            onClick={() => setTab("chat")}
-          />
+          {RAIL_TABS.map((t) => (
+            <TabButton
+              key={t.id}
+              id={t.id}
+              label={t.label}
+              active={tab === t.id}
+              onClick={() => setTab(t.id)}
+            />
+          ))}
         </div>
       ) : null}
 
@@ -185,55 +249,18 @@ export function WorldRail({
           <p className="font-ui text-sm text-muted-foreground">
             Opening the world…
           </p>
-        ) : status === "completed" && world ? (
+        ) : railCtx ? (
           <div
+            role="tabpanel"
+            id={`world-panel-${tab}`}
+            aria-labelledby={`world-tab-${tab}`}
             className={
-              tab === "chat"
-                ? "flex h-[calc(60vh-96px)] flex-col md:h-[calc(100vh-96px)]"
-                : "space-y-6"
+              activeTabDef?.layout === "fill"
+                ? "flex h-[calc(60vh-96px)] flex-col outline-none md:h-[calc(100vh-96px)]"
+                : "space-y-6 outline-none"
             }
           >
-            {tab === "scene" ? (
-              <SceneView
-                bookId={bookId}
-                chunkIdx={currentChunk}
-                preloaded={overlay}
-                onAskQuestion={handleAskQuestion}
-              />
-            ) : tab === "cast" ? (
-              <>
-                {world.settingDescription ? (
-                  <p className="font-reading text-sm leading-relaxed">
-                    {world.settingDescription}
-                  </p>
-                ) : null}
-                {world.entities && world.entities.length > 0 ? (
-                  <CastList
-                    entities={world.entities}
-                    counts={world.counts}
-                    bookId={bookId}
-                    onChat={(entityId) => {
-                      setChatEntityId(entityId);
-                      setChatInitialMessage(undefined);
-                      setTab("chat");
-                    }}
-                  />
-                ) : null}
-              </>
-            ) : (
-              <ChatTab
-                bookId={bookId}
-                entities={world.entities ?? []}
-                chunkIdx={currentChunk}
-                entityId={chatEntityId}
-                initialMessage={chatInitialMessage}
-                onSelect={(id) => {
-                  setChatEntityId(id);
-                  setChatInitialMessage(undefined);
-                }}
-                onBack={() => setChatEntityId(null)}
-              />
-            )}
+            {activeTabDef?.render(railCtx)}
           </div>
         ) : isFailed ? (
           <WorldFormingCard
@@ -263,6 +290,54 @@ export function WorldRail({
         )}
       </div>
     </div>
+  );
+}
+
+/** Scene tab: the illustration + description for the page on screen. */
+function ScenePanel(ctx: RailPanelContext) {
+  return (
+    <SceneView
+      bookId={ctx.bookId}
+      chunkIdx={ctx.currentChunk}
+      preloaded={ctx.overlay}
+      onAskQuestion={ctx.onAskQuestion}
+    />
+  );
+}
+
+/** Cast tab: setting blurb + the full entity roster. */
+function CastPanel(ctx: RailPanelContext) {
+  return (
+    <>
+      {ctx.world.settingDescription ? (
+        <p className="font-reading text-sm leading-relaxed">
+          {ctx.world.settingDescription}
+        </p>
+      ) : null}
+      {ctx.world.entities && ctx.world.entities.length > 0 ? (
+        <CastList
+          entities={ctx.world.entities}
+          counts={ctx.world.counts}
+          bookId={ctx.bookId}
+          onChat={ctx.onStartChat}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/** Chat tab: thin adapter handing the rail's chat state to `ChatTab` below. */
+function ChatTabPanel(ctx: RailPanelContext) {
+  return (
+    <ChatTab
+      bookId={ctx.bookId}
+      entities={ctx.world.entities ?? []}
+      chunkIdx={ctx.currentChunk}
+      entityId={ctx.chat.entityId}
+      initialMessage={ctx.chat.initialMessage}
+      onSelect={ctx.onStartChat}
+      onBack={ctx.chat.onBack}
+    />
   );
 }
 
@@ -309,9 +384,14 @@ function ChatTab({
               <button
                 type="button"
                 onClick={() => onSelect(entity.id)}
-                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--muted)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+                className="flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-md px-2 py-2 text-left hover:bg-[var(--muted)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
               >
-                <span className="font-display text-base">{entity.name}</span>
+                <span
+                  className="min-w-0 flex-1 font-display text-base break-words"
+                  title={entity.name}
+                >
+                  {entity.name}
+                </span>
                 <ProgressChip introducedAtChunk={entity.introducedAtChunk} />
               </button>
             </li>
@@ -360,10 +440,12 @@ function ChatTab({
 }
 
 function TabButton({
+  id,
   label,
   active,
   onClick,
 }: {
+  id: string;
   label: string;
   active: boolean;
   onClick: () => void;
@@ -371,9 +453,13 @@ function TabButton({
   return (
     <button
       type="button"
+      id={`world-tab-${id}`}
+      role="tab"
+      aria-selected={active}
+      aria-controls={`world-panel-${id}`}
+      tabIndex={active ? 0 : -1}
       onClick={onClick}
-      aria-pressed={active}
-      className="eyebrow -mb-px rounded-t-sm border-b-2 pb-2 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+      className="eyebrow -mb-px shrink-0 rounded-t-sm border-b-2 pb-2 whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
       style={{
         borderColor: active ? "var(--world-accent)" : "transparent",
         color: active ? "var(--card-foreground)" : "var(--muted-foreground)",

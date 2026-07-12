@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { ProgressChip } from "./ProgressChip";
 import type { WorldCounts, WorldEntity } from "./types";
 
 interface CastListProps {
@@ -135,8 +136,16 @@ function EntityRow({
         disabled={!expandable}
         className="flex w-full items-start justify-between gap-2 rounded-md px-2 py-2 text-left focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none disabled:cursor-default"
       >
-        <span className="flex flex-col items-start gap-0.5">
-          <span className="font-display text-base">{entity.name}</span>
+        <span className="flex min-w-0 flex-1 flex-col items-start gap-1">
+          <span className="flex w-full flex-wrap items-center gap-x-2 gap-y-1">
+            <span
+              className="min-w-0 font-display text-base break-words"
+              title={entity.name}
+            >
+              {entity.name}
+            </span>
+            <ProgressChip introducedAtChunk={entity.introducedAtChunk} />
+          </span>
           {attributes?.role ? (
             <span className="line-clamp-1 font-ui text-xs text-muted-foreground">
               {attributes.role}

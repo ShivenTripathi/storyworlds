@@ -532,7 +532,13 @@ export function Reader({ bookId }: ReaderProps) {
       >
         <div
           className="mx-auto"
-          style={{ maxWidth: `${ch}ch`, fontFamily: family }}
+          style={{
+            // A spread flows into two columns, so it needs ~2× the single-page
+            // measure plus a gutter.
+            maxWidth:
+              settings.pageView === "spread" ? `${ch * 2 + 8}ch` : `${ch}ch`,
+            fontFamily: family,
+          }}
         >
           {loadState.kind === "loading" || chunkLoading || !chunkData ? (
             <ReaderSkeleton />
@@ -552,7 +558,9 @@ export function Reader({ bookId }: ReaderProps) {
                   fontSize: `${settings.fontSize}px`,
                   lineHeight: settings.lineHeight,
                 }}
-                className="reader-prose"
+                className={`reader-prose${
+                  settings.pageView === "spread" ? "reader-prose--spread" : ""
+                }`}
               >
                 {blocks.map((block, i) => (
                   <ReaderBlock key={i} block={block} />
@@ -613,7 +621,24 @@ function ReaderBlock({ block }: { block: Block }) {
         </p>
       );
     case "heading":
-      return <h2 className="reader-chapter">{block.text}</h2>;
+      return (
+        <h2 className={block.section ? "reader-section" : "reader-chapter"}>
+          {block.text}
+        </h2>
+      );
+    case "toc":
+      return (
+        <nav className="reader-toc" aria-label="Contents">
+          <ol>
+            {block.entries.map((e, i) => (
+              <li key={i}>
+                <span className="reader-toc-marker">{e.marker}</span>
+                <span className="reader-toc-title">{e.title}</span>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      );
     case "illustration":
       return (
         <figure className="reader-ornament" aria-hidden="true">

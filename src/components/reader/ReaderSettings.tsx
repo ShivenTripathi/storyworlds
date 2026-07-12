@@ -7,6 +7,7 @@ import {
   FONT_SIZE_MIN,
   LINE_HEIGHTS,
   MEASURES,
+  PAGE_VIEWS,
   READER_THEMES,
   type ReaderSettingsState,
 } from "./settings";
@@ -233,6 +234,32 @@ export function ReaderSettings({
                     {m.label}
                   </button>
                 ))}
+              </div>
+            </section>
+
+            <section>
+              <p className="eyebrow mb-2">Page view</p>
+              <div className="flex gap-2">
+                {PAGE_VIEWS.map((pv) => {
+                  const active = (settings.pageView ?? "single") === pv.id;
+                  return (
+                    <button
+                      key={pv.id}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => patch({ pageView: pv.id })}
+                      className="flex-1 rounded-md border py-2 font-ui text-xs focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+                      style={{
+                        borderColor: active
+                          ? "var(--world-accent)"
+                          : "var(--border)",
+                        color: active ? "var(--world-accent)" : "inherit",
+                      }}
+                    >
+                      {pv.label}
+                    </button>
+                  );
+                })}
               </div>
             </section>
           </div>
