@@ -89,6 +89,12 @@ export const books = pgTable(
     catalogSource: text("catalog_source"),
     // Short catalog description shown on the Discover tab.
     blurb: text("blurb"),
+    // Storage key (src/services/storage.ts) of the generated cover
+    // illustration, e.g. 'books/{bookId}/cover.img'. Null until analysis
+    // has produced a visualStyle AND cover generation has succeeded (best-
+    // effort — see src/services/cover.ts); render the typographic fallback
+    // cover (src/components/shelf/TypographicCover.tsx) while null.
+    coverStorageKey: text("cover_storage_key"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

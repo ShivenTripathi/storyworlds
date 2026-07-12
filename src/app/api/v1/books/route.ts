@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     rateLimit(`key:${keyId}:v1`, { windowSeconds: 60, max: 60 });
 
     const rows = await listBooks(userId);
-    const books = rows.map((r) => toBookDto(r.book, r));
+    const books = await Promise.all(rows.map((r) => toBookDto(r.book, r)));
 
     return NextResponse.json({ books });
   } catch (e) {

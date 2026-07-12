@@ -132,7 +132,10 @@ export async function POST(req: NextRequest) {
         contributedByUserId: visibility === "published" ? userId : null,
       });
 
-      return NextResponse.json({ book: toBookDto(book) }, { status: 201 });
+      return NextResponse.json(
+        { book: await toBookDto(book) },
+        { status: 201 },
+      );
     }
 
     // --- Legacy path: raw file as multipart (small files / API callers) -----
@@ -195,7 +198,7 @@ export async function POST(req: NextRequest) {
       contributedByUserId: visibility === "published" ? userId : null,
     });
 
-    return NextResponse.json({ book: toBookDto(book) }, { status: 201 });
+    return NextResponse.json({ book: await toBookDto(book) }, { status: 201 });
   } catch (e) {
     return handleApiError(e);
   }
@@ -207,7 +210,9 @@ export async function GET() {
     const { userId } = await requireUser();
 
     const rows = await listBooks(userId);
-    const books = rows.map((r) => toBookDto(r.book, r, r.source));
+    const books = await Promise.all(
+      rows.map((r) => toBookDto(r.book, r, r.source)),
+    );
 
     return NextResponse.json({ books });
   } catch (e) {

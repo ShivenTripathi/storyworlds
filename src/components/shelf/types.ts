@@ -31,6 +31,10 @@ export interface Book {
    * the book has been (re-)analyzed since blurb generation shipped — render
    * nothing when absent, never a placeholder. */
   blurb?: string | null;
+  /** URL of the generated cover illustration (src/services/cover.ts), or
+   * null until one exists. Render the typographic fallback cover
+   * (TypographicCover) while null. */
+  coverUrl?: string | null;
   /** Present on /api/marketplace and /api/books responses: whether this
    * book is on the shelf because the caller owns it or added it from
    * Discover. */

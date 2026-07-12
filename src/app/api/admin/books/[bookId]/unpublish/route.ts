@@ -17,7 +17,7 @@ export async function POST(_req: Request, { params }: Params) {
       throw new ApiError(404, "not_found", "Book not found.");
     }
 
-    return NextResponse.json({ book: toBookDto(book) });
+    return NextResponse.json({ book: await toBookDto(book) });
   } catch (e) {
     return handleApiError(e);
   }

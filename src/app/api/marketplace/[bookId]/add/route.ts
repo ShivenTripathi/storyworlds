@@ -15,7 +15,10 @@ export async function POST(_req: Request, { params }: Params) {
 
     const book = await addToLibrary(userId, bookId);
 
-    return NextResponse.json({ book: toBookDto(book, null, "library") }, { status: 201 });
+    return NextResponse.json(
+      { book: await toBookDto(book, null, "library") },
+      { status: 201 },
+    );
   } catch (e) {
     return handleApiError(e);
   }

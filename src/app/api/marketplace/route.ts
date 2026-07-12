@@ -15,11 +15,16 @@ export async function GET() {
     await dbReady;
     const { userId } = await requireUser();
 
-    const [published, mine] = await Promise.all([listPublished(), listBooks(userId)]);
+    const [published, mine] = await Promise.all([
+      listPublished(),
+      listBooks(userId),
+    ]);
     const inLibrary = new Set(mine.map((r) => r.book.id));
 
-    const books = published.map((book) =>
-      toBookDto(book, null, inLibrary.has(book.id) ? "library" : undefined),
+    const books = await Promise.all(
+      published.map((book) =>
+        toBookDto(book, null, inLibrary.has(book.id) ? "library" : undefined),
+      ),
     );
 
     return NextResponse.json({ books });

@@ -410,6 +410,11 @@ export interface BookDto {
    * (see WorldSynthesisSchema.blurb / src/jobs/analyze-book.ts persistWorld).
    * Shown on Discover and the book-detail page, always BEFORE reading. */
   blurb?: string | null;
+  /** Resolved URL for the generated cover illustration (see
+   * src/services/cover.ts + books.coverStorageKey), or null until one has
+   * been generated. Render the typographic fallback cover
+   * (src/components/shelf/TypographicCover.tsx) while null. */
+  coverUrl?: string | null;
   /** Set by listBooks: whether this book is on the shelf because the caller
    * owns it or because they've added a published book to their library. */
   source?: "owned" | "library";
@@ -421,8 +426,16 @@ export interface BookDto {
   };
 }
 
-/** Maps a book row (+ optional progress row) to the public API DTO shape. */
-export function toBookDto(
+/**
+ * Maps a book row (+ optional progress row) to the public API DTO shape.
+ * Async only because it resolves `coverUrl` via the storage driver
+ * (src/services/storage.ts) — for the zero-cost DB/local drivers that's a
+ * cheap in-process string synthesis (no I/O), and even R2's signed URL is a
+ * local presign computation, so this stays "a single cheap read, no N+1"
+ * regardless of driver. Callers mapping over an array should batch with
+ * `Promise.all` rather than awaiting in a loop.
+ */
+export async function toBookDto(
   book: {
     id: string;
     title: string;
@@ -436,6 +449,7 @@ export function toBookDto(
     pricingTier?: string | null;
     sourceFormat?: string | null;
     blurb?: string | null;
+    coverStorageKey?: string | null;
   },
   progress?: {
     currentChunk: number | null;
@@ -443,7 +457,11 @@ export function toBookDto(
     lastReadAt?: Date | null;
   } | null,
   source?: "owned" | "library",
-): BookDto {
+): Promise<BookDto> {
+  const coverUrl = book.coverStorageKey
+    ? await storage.getUrl(book.coverStorageKey)
+    : null;
+
   const dto: BookDto = {
     id: book.id,
     title: book.title,
@@ -457,6 +475,7 @@ export function toBookDto(
     pricingTier: book.pricingTier ?? null,
     sourceFormat: book.sourceFormat ?? null,
     blurb: book.blurb ?? null,
+    coverUrl,
   };
 
   if (source) {

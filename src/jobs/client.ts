@@ -42,3 +42,12 @@ export interface OverlaySweepRequestedEvent {
   name: "overlay/sweep.requested";
   data: Record<string, never>;
 }
+
+/**
+ * Manual trigger for the always-on cover-illustration backfill sweeper
+ * (src/jobs/sweep-covers.ts) — see AnalysisSweepRequestedEvent above.
+ */
+export interface CoverSweepRequestedEvent {
+  name: "cover/sweep.requested";
+  data: Record<string, never>;
+}

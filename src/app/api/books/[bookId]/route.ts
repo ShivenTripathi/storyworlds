@@ -19,7 +19,7 @@ export async function GET(_req: Request, { params }: Params) {
       frontierChunk: progressRow?.frontierChunk ?? 0,
     };
 
-    return NextResponse.json({ book: toBookDto(book), progress });
+    return NextResponse.json({ book: await toBookDto(book), progress });
   } catch (e) {
     return handleApiError(e);
   }

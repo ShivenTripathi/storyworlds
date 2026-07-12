@@ -32,6 +32,7 @@ import {
 } from "@/domain/schemas";
 import { segmentChunks } from "@/domain/segmentation";
 import { env } from "@/lib/env";
+import { generateCoverForBook } from "@/services/cover";
 import { generateOverlayCore } from "@/services/overlays";
 import { inngest } from "./client";
 
@@ -212,6 +213,21 @@ async function persistWorld(
       updatedAt: new Date(),
     })
     .where(eq(books.id, bookId));
+
+  // Best-effort cover illustration, now that visualStyle has just been
+  // persisted above. generateCoverForBook already degrades to `null` on any
+  // image-pipeline failure (see src/ai/image.ts / CLAUDE.md ZERO-COST
+  // CONSTRAINT) and never throws — this try/catch is just defense against an
+  // unexpected error elsewhere (e.g. a DB hiccup) so a cover problem can
+  // never fail the analysis job it rides along with.
+  try {
+    await generateCoverForBook(bookId);
+  } catch (err) {
+    console.error(
+      `[analyze-book] cover generation failed for book ${bookId}:`,
+      err,
+    );
+  }
 }
 
 /**

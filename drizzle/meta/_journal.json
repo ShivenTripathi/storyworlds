@@ -50,6 +50,13 @@
       "when": 1783877014439,
       "tag": "0006_soft_lily_hollister",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1783880612289,
+      "tag": "0007_silent_brood",
+      "breakpoints": true
     }
   ]
 }
