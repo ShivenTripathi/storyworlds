@@ -44,19 +44,31 @@ export function fetchBook(bookId: string): Promise<BookResponse> {
   return request<BookResponse>(`/api/books/${bookId}`);
 }
 
-export function fetchChunk(
-  bookId: string,
-  idx: number,
-): Promise<ChunkPayload> {
+export function fetchChunk(bookId: string, idx: number): Promise<ChunkPayload> {
   return request<ChunkPayload>(`/api/books/${bookId}/chunks/${idx}`);
+}
+
+/** URL + JSON body for a progress PUT, shared by the async helper and the
+ * synchronous `keepalive` flush on pagehide/visibilitychange. */
+export function progressRequest(
+  bookId: string,
+  currentChunk: number,
+  frontierChunk?: number,
+): { url: string; body: string } {
+  return {
+    url: `/api/books/${bookId}/progress`,
+    body: JSON.stringify({
+      currentChunk,
+      ...(frontierChunk != null ? { frontierChunk } : {}),
+    }),
+  };
 }
 
 export function putProgress(
   bookId: string,
   currentChunk: number,
+  frontierChunk?: number,
 ): Promise<ReadingProgress> {
-  return request<ReadingProgress>(`/api/books/${bookId}/progress`, {
-    method: "PUT",
-    body: JSON.stringify({ currentChunk }),
-  });
+  const { url, body } = progressRequest(bookId, currentChunk, frontierChunk);
+  return request<ReadingProgress>(url, { method: "PUT", body });
 }

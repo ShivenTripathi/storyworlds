@@ -34,29 +34,27 @@ export function SettingsClient() {
   return (
     <div className="mx-auto w-full max-w-xl">
       <div className="mb-10">
-        <p className="eyebrow mb-2">SETTINGS</p>
+        <p className="eyebrow mb-2">YOUR ACCOUNT</p>
         <h1 className="font-display text-4xl leading-tight">Settings</h1>
       </div>
 
       <div className="flex flex-col gap-10">
         <section>
           <p className="eyebrow mb-3">Account</p>
-          <div className="flex items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+          <div className="flex items-center justify-between rounded-lg border border-border bg-card p-5">
             <div>
               <p className="font-ui text-sm">
                 {loadState === "ready" ? (
                   me?.user.email
                 ) : loadState === "loading" ? (
-                  <span className="text-[var(--muted-foreground)]">
-                    Loading…
-                  </span>
+                  <span className="text-muted-foreground">Loading…</span>
                 ) : (
-                  <span className="text-[var(--muted-foreground)]">
+                  <span className="text-muted-foreground">
                     Email unavailable
                   </span>
                 )}
               </p>
-              <p className="font-ui mt-1 text-xs text-[var(--muted-foreground)]">
+              <p className="mt-1 font-ui text-xs text-muted-foreground">
                 Manage sign-in &amp; security from the avatar menu.
               </p>
             </div>
@@ -71,14 +69,14 @@ export function SettingsClient() {
               Account details couldn&apos;t be reached. Try refreshing.
             </p>
           ) : loadState === "loading" ? (
-            <p className="font-ui text-sm text-[var(--muted-foreground)]">
+            <p className="font-ui text-sm text-muted-foreground">
               Gathering your plan…
             </p>
           ) : (
             <div className="flex flex-col gap-5">
               <p className="font-display text-2xl">{me?.plan.name}</p>
 
-              <div className="flex flex-col gap-4 rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+              <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-5">
                 <UsageMeter
                   label="Uploads"
                   used={me?.todayUsage.uploads ?? 0}
@@ -98,7 +96,7 @@ export function SettingsClient() {
 
         <section>
           <p className="eyebrow mb-3">Reading defaults</p>
-          <p className="font-ui text-sm text-[var(--muted-foreground)]">
+          <p className="font-ui text-sm text-muted-foreground">
             Per-book settings — type, theme, and pacing — live in the
             reader&apos;s Aa menu, next to the text.
           </p>

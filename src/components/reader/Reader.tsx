@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { fetchBook, fetchChunk, putProgress, ReaderApiError } from "./api";
+import {
+  fetchBook,
+  fetchChunk,
+  putProgress,
+  progressRequest,
+  ReaderApiError,
+} from "./api";
 import { ChapterPlate } from "./ChapterPlate";
 import { ReaderSettings } from "./ReaderSettings";
 import { useOverlay } from "./useOverlay";
@@ -38,9 +44,8 @@ export function Reader({ bookId }: ReaderProps) {
   const [chunkLoading, setChunkLoading] = useState(true);
   const [chromeVisible, setChromeVisible] = useState(true);
   const [railOpen, setRailOpen] = useState(false);
-  const [settings, setSettings] = useState<ReaderSettingsState>(
-    DEFAULT_SETTINGS,
-  );
+  const [settings, setSettings] =
+    useState<ReaderSettingsState>(DEFAULT_SETTINGS);
 
   // Only start fetching the scene overlay once this page's text has settled
   // on screen for a beat — avoids firing a request for every page flown past
@@ -87,6 +92,11 @@ export function Reader({ bookId }: ReaderProps) {
   const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Latest on-screen position + a "has unsaved turns" flag, both read by
+  // flushProgress() from stale closures (unmount cleanup, pagehide) where
+  // reading React state directly would be stale.
+  const latestChunkRef = useRef(0);
+  const progressDirtyRef = useRef(false);
 
   const totalChunks = chunkData?.totalChunks ?? book?.totalChunks ?? null;
 
@@ -130,6 +140,7 @@ export function Reader({ bookId }: ReaderProps) {
         setBook(b);
         const start = Math.max(0, progress?.currentChunk ?? 0);
         frontierRef.current = progress?.frontierChunk ?? start;
+        latestChunkRef.current = start;
         setCurrentChunk(start);
 
         const seq = ++requestSeq.current;
@@ -173,6 +184,8 @@ export function Reader({ bookId }: ReaderProps) {
 
       const seq = ++requestSeq.current;
       setCurrentChunk(clamped);
+      latestChunkRef.current = clamped;
+      progressDirtyRef.current = true;
       frontierRef.current = Math.max(frontierRef.current, clamped);
       containerRef.current?.scrollTo({ top: 0, behavior: "auto" });
 
@@ -189,17 +202,53 @@ export function Reader({ bookId }: ReaderProps) {
 
       if (progressTimer.current) clearTimeout(progressTimer.current);
       progressTimer.current = setTimeout(() => {
-        putProgress(bookId, clamped)
+        progressTimer.current = null;
+        putProgress(bookId, clamped, frontierRef.current)
           .then((p) => {
             frontierRef.current = p.frontierChunk;
+            // Only clears the flag if no newer turn dirtied it while this
+            // request was in flight.
+            if (latestChunkRef.current === clamped) {
+              progressDirtyRef.current = false;
+            }
           })
           .catch(() => {
-            // best-effort — progress will sync on next successful nav
+            // best-effort — progress will sync on next successful nav/flush
           });
       }, PROGRESS_DEBOUNCE_MS);
     },
     [bookId, loadChunk, loadState.kind, prefetch, totalChunks],
   );
+
+  // Immediately persist the latest position, cancelling any pending debounce.
+  // Uses a `keepalive` fetch so it survives the page tearing down (tab close,
+  // full navigation on Escape/Shelf). Idempotent + server-clamped, so a
+  // redundant flush is harmless; guarded by the dirty flag to skip no-op
+  // writes when nothing has changed since the last successful save.
+  const flushProgress = useCallback(() => {
+    if (progressTimer.current) {
+      clearTimeout(progressTimer.current);
+      progressTimer.current = null;
+    }
+    if (!progressDirtyRef.current) return;
+    progressDirtyRef.current = false;
+    const { url, body } = progressRequest(
+      bookId,
+      latestChunkRef.current,
+      frontierRef.current,
+    );
+    try {
+      void fetch(url, {
+        method: "PUT",
+        keepalive: true,
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body,
+      });
+    } catch {
+      // best-effort — nothing more we can do as the page tears down
+    }
+  }, [bookId]);
 
   const goNext = useCallback(
     () => navigate(currentChunk + 1),
@@ -214,10 +263,7 @@ export function Reader({ bookId }: ReaderProps) {
   const wakeChrome = useCallback(() => {
     setChromeVisible(true);
     if (idleTimer.current) clearTimeout(idleTimer.current);
-    idleTimer.current = setTimeout(
-      () => setChromeVisible(false),
-      IDLE_HIDE_MS,
-    );
+    idleTimer.current = setTimeout(() => setChromeVisible(false), IDLE_HIDE_MS);
   }, []);
 
   useEffect(() => {
@@ -256,6 +302,9 @@ export function Reader({ bookId }: ReaderProps) {
           e.stopPropagation();
           setRailOpen(false);
         } else {
+          // Full-page nav would abort an in-flight debounced save — persist
+          // the last turn first.
+          flushProgress();
           window.location.href = "/shelf";
         }
       } else if (e.key === "w" || e.key === "W") {
@@ -265,13 +314,27 @@ export function Reader({ bookId }: ReaderProps) {
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [goNext, goPrev, railOpen, wakeChrome]);
+  }, [goNext, goPrev, railOpen, wakeChrome, flushProgress]);
 
+  // Persist reading progress across every teardown path: React unmount
+  // (Shelf link, route change), tab close / navigation (pagehide), and
+  // backgrounding (visibilitychange → hidden). Each flushes the pending
+  // debounce so the last page turn(s) are never lost.
   useEffect(() => {
+    function onPageHide() {
+      flushProgress();
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === "hidden") flushProgress();
+    }
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     return () => {
-      if (progressTimer.current) clearTimeout(progressTimer.current);
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      flushProgress();
     };
-  }, []);
+  }, [flushProgress]);
 
   const theme = themeSwatch(settings.theme);
   const family = faceFamily(settings.face);
@@ -310,12 +373,12 @@ export function Reader({ bookId }: ReaderProps) {
               ? "Book not found"
               : "Something went wrong"}
         </p>
-        <p className="font-ui max-w-md text-sm opacity-80">
+        <p className="max-w-md font-ui text-sm opacity-80">
           {loadState.message}
         </p>
         <Link
           href="/shelf"
-          className="font-ui mt-2 rounded-full border px-5 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          className="mt-2 rounded-full border px-5 py-2 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
           style={{ borderColor: "var(--border)" }}
         >
           Back to Shelf
@@ -353,7 +416,7 @@ export function Reader({ bookId }: ReaderProps) {
         <Link
           href="/shelf"
           aria-label="Back to Shelf"
-          className="font-ui flex min-h-11 items-center gap-1.5 rounded-md px-2 py-2 text-sm opacity-80 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          className="flex min-h-11 items-center gap-1.5 rounded-md px-2 py-2 font-ui text-sm opacity-80 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
         >
           <svg
             width="16"
@@ -374,7 +437,7 @@ export function Reader({ bookId }: ReaderProps) {
         </Link>
 
         <div className="min-w-0 flex-1 text-center">
-          <p className="font-display truncate text-sm sm:text-base">
+          <p className="truncate font-display text-sm sm:text-base">
             {book?.title ?? ""}
           </p>
           {pageLabel ? <p className="eyebrow mt-0.5">{pageLabel}</p> : null}
@@ -386,7 +449,7 @@ export function Reader({ bookId }: ReaderProps) {
             aria-label="Toggle story world panel"
             aria-pressed={railOpen}
             onClick={() => setRailOpen((v) => !v)}
-            className="flex h-9 min-w-9 items-center justify-center rounded-full border px-3 font-ui text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            className="flex h-9 min-w-9 items-center justify-center rounded-full border px-3 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
             style={{
               background: "var(--card)",
               borderColor: "var(--border)",
@@ -401,7 +464,7 @@ export function Reader({ bookId }: ReaderProps) {
 
       {/* Mobile floating cluster (shown when chrome is hidden) */}
       <div
-        className={`fixed right-4 bottom-6 z-40 sm:hidden transition-[opacity,transform] duration-300 motion-reduce:transition-none ${
+        className={`fixed right-4 bottom-6 z-40 transition-[opacity,transform] duration-300 motion-reduce:transition-none sm:hidden ${
           chromeVisible
             ? "pointer-events-none translate-y-2 opacity-0"
             : "translate-y-0 opacity-100"
@@ -415,7 +478,7 @@ export function Reader({ bookId }: ReaderProps) {
         type="button"
         aria-label="Previous page"
         onClick={goPrev}
-        className="group fixed top-0 left-0 z-20 flex h-full w-[20%] items-center justify-start pl-2 focus-visible:outline-none"
+        className="group fixed top-0 left-0 z-20 flex h-full w-[14%] max-w-16 items-center justify-start pl-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none focus-visible:ring-inset"
       >
         <svg
           width="20"
@@ -438,7 +501,7 @@ export function Reader({ bookId }: ReaderProps) {
         type="button"
         aria-label="Next page"
         onClick={goNext}
-        className="group fixed top-0 right-0 z-20 flex h-full w-[20%] items-center justify-end pr-2 focus-visible:outline-none"
+        className="group fixed top-0 right-0 z-20 flex h-full w-[14%] max-w-16 items-center justify-end pr-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none focus-visible:ring-inset"
       >
         <svg
           width="20"
@@ -471,7 +534,7 @@ export function Reader({ bookId }: ReaderProps) {
           {loadState.kind === "loading" || chunkLoading || !chunkData ? (
             <ReaderSkeleton />
           ) : isEmptyChunk ? (
-            <p className="font-ui py-32 text-center text-sm opacity-50">
+            <p className="py-32 text-center font-ui text-sm opacity-50">
               — blank page —
             </p>
           ) : (
@@ -504,7 +567,10 @@ export function Reader({ bookId }: ReaderProps) {
       >
         <div
           className="h-full transition-[width] duration-300 motion-reduce:transition-none"
-          style={{ width: `${progressPct}%`, background: "var(--world-accent)" }}
+          style={{
+            width: `${progressPct}%`,
+            background: "var(--world-accent)",
+          }}
         />
       </div>
 

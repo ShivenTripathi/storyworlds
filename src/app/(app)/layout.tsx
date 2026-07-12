@@ -11,7 +11,11 @@ export default async function AppShellLayout({
   return (
     <div className="flex min-h-full flex-1 flex-col">
       <AppHeader />
-      <div className="mx-auto w-full max-w-5xl flex-1 px-6 py-10">
+      <div
+        id="main-content"
+        tabIndex={-1}
+        className="mx-auto w-full max-w-5xl flex-1 px-6 py-10 focus:outline-none"
+      >
         {children}
       </div>
     </div>

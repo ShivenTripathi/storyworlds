@@ -62,8 +62,8 @@ export function ReaderSettings({
         onClick={() => setOpen((v) => !v)}
         className={
           compact
-            ? "flex h-11 w-11 items-center justify-center rounded-full border font-display text-base shadow-lg backdrop-blur focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-            : "flex h-9 min-w-9 items-center justify-center rounded-full border px-3 font-display text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            ? "flex h-11 w-11 items-center justify-center rounded-full border font-display text-base shadow-lg backdrop-blur focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+            : "flex h-9 min-w-9 items-center justify-center rounded-full border px-3 font-display text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
         }
         style={{
           background: "var(--card)",
@@ -96,7 +96,7 @@ export function ReaderSettings({
                     aria-label={`${t.label} theme`}
                     aria-pressed={settings.theme === t.id}
                     onClick={() => patch({ theme: t.id })}
-                    className="flex h-11 flex-col items-center justify-center gap-1 rounded-md border-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className="flex h-11 flex-col items-center justify-center gap-1 rounded-md border-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
                     style={{
                       background: t.bg,
                       borderColor:
@@ -116,7 +116,7 @@ export function ReaderSettings({
                 {READER_THEMES.map((t) => (
                   <span
                     key={t.id}
-                    className="font-ui text-center text-[10px] opacity-70"
+                    className="text-center font-ui text-[10px] opacity-70"
                   >
                     {t.label}
                   </span>
@@ -134,11 +134,11 @@ export function ReaderSettings({
                 onChange={(e) =>
                   patch({ face: e.target.value as ReaderSettingsState["face"] })
                 }
-                className="font-ui w-full rounded-md border bg-transparent px-2 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className="w-full rounded-md border bg-transparent px-2 py-2 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
                 style={{ borderColor: "var(--border)" }}
               >
                 {FACES.map((f) => (
-                  <option key={f.id} value={f.id} style={{ color: "black" }}>
+                  <option key={f.id} value={f.id}>
                     {f.label}
                   </option>
                 ))}
@@ -153,9 +153,11 @@ export function ReaderSettings({
                   aria-label="Decrease text size"
                   disabled={settings.fontSize <= FONT_SIZE_MIN}
                   onClick={() =>
-                    patch({ fontSize: Math.max(FONT_SIZE_MIN, settings.fontSize - 1) })
+                    patch({
+                      fontSize: Math.max(FONT_SIZE_MIN, settings.fontSize - 1),
+                    })
                   }
-                  className="flex h-9 w-9 items-center justify-center rounded-md border font-ui text-base disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  className="flex h-9 w-9 items-center justify-center rounded-md border font-ui text-base focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none disabled:opacity-30"
                   style={{ borderColor: "var(--border)" }}
                 >
                   −
@@ -168,9 +170,11 @@ export function ReaderSettings({
                   aria-label="Increase text size"
                   disabled={settings.fontSize >= FONT_SIZE_MAX}
                   onClick={() =>
-                    patch({ fontSize: Math.min(FONT_SIZE_MAX, settings.fontSize + 1) })
+                    patch({
+                      fontSize: Math.min(FONT_SIZE_MAX, settings.fontSize + 1),
+                    })
                   }
-                  className="flex h-9 w-9 items-center justify-center rounded-md border font-ui text-base disabled:opacity-30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                  className="flex h-9 w-9 items-center justify-center rounded-md border font-ui text-base focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none disabled:opacity-30"
                   style={{ borderColor: "var(--border)" }}
                 >
                   +
@@ -187,7 +191,7 @@ export function ReaderSettings({
                     type="button"
                     aria-pressed={settings.lineHeight === lh}
                     onClick={() => patch({ lineHeight: lh })}
-                    className="font-ui flex-1 rounded-md border py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className="flex-1 rounded-md border py-2 font-ui text-xs focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
                     style={{
                       borderColor:
                         settings.lineHeight === lh
@@ -214,7 +218,7 @@ export function ReaderSettings({
                     type="button"
                     aria-pressed={settings.measure === m.id}
                     onClick={() => patch({ measure: m.id })}
-                    className="font-ui flex-1 rounded-md border py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className="flex-1 rounded-md border py-2 font-ui text-xs focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
                     style={{
                       borderColor:
                         settings.measure === m.id

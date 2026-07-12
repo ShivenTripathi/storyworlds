@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { TypographicCover } from "./TypographicCover";
 import { BookCard } from "./BookCard";
@@ -13,22 +13,87 @@ type Tab = "shelf" | "discover";
 
 export function ShelfClient() {
   const [tab, setTab] = useState<Tab>("shelf");
+  const [books, setBooks] = useState<Book[]>([]);
+  const [loadState, setLoadState] = useState<LoadState>("loading");
+  // Tracks whether the reader has deliberately picked a tab — once they
+  // have, we stop auto-steering them to Discover even if the shelf is
+  // (still) empty.
+  const userPickedTab = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/books");
+        if (!res.ok) throw new Error("Failed to load shelf");
+        const { books: fetched } = (await res.json()) as { books: Book[] };
+        if (cancelled) return;
+        setBooks(fetched);
+        setLoadState("ready");
+        // A brand-new signed-in reader has an empty shelf — send them
+        // straight to the catalog instead of an empty state.
+        if (!userPickedTab.current && fetched.length === 0) {
+          setTab("discover");
+        }
+      } catch {
+        if (!cancelled) setLoadState("error");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function selectTab(next: Tab) {
+    userPickedTab.current = true;
+    setTab(next);
+  }
+
+  function handleUploaded(book: Book) {
+    setBooks((prev) => [book, ...prev]);
+  }
+
+  function handleDelete(bookId: string) {
+    const prev = books;
+    setBooks((current) => current.filter((b) => b.id !== bookId));
+    fetch(`/api/books/${bookId}`, { method: "DELETE" }).catch(() => {
+      // best-effort rollback if the delete failed server-side
+      setBooks(prev);
+    });
+  }
 
   return (
     <div>
       <div className="mb-10">
-        <h1 className="font-display text-4xl leading-tight sm:text-5xl">Your shelf</h1>
+        <h1 className="font-display text-4xl leading-tight sm:text-5xl">
+          Your shelf
+        </h1>
         <div className="mt-4 flex items-center gap-6">
-          <TabButton active={tab === "shelf"} onClick={() => setTab("shelf")}>
+          <TabButton
+            active={tab === "shelf"}
+            onClick={() => selectTab("shelf")}
+          >
             MY SHELF
           </TabButton>
-          <TabButton active={tab === "discover"} onClick={() => setTab("discover")}>
+          <TabButton
+            active={tab === "discover"}
+            onClick={() => selectTab("discover")}
+          >
             DISCOVER
           </TabButton>
         </div>
       </div>
 
-      {tab === "shelf" ? <MyShelf /> : <DiscoverGrid />}
+      {tab === "shelf" ? (
+        <MyShelf
+          books={books}
+          loadState={loadState}
+          onUploaded={handleUploaded}
+          onDelete={handleDelete}
+        />
+      ) : (
+        <DiscoverGrid />
+      )}
     </div>
   );
 }
@@ -46,9 +111,12 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className="eyebrow border-b-2 pb-1 transition-colors"
+      aria-pressed={active}
+      className="eyebrow rounded-md border-b-2 pb-1 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
       style={{
-        borderColor: active ? "var(--world-accent, var(--primary))" : "transparent",
+        borderColor: active
+          ? "var(--world-accent, var(--primary))"
+          : "transparent",
         color: active ? "var(--foreground)" : "var(--muted-foreground)",
       }}
     >
@@ -57,48 +125,50 @@ function TabButton({
   );
 }
 
-function MyShelf() {
-  const [books, setBooks] = useState<Book[]>([]);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch("/api/books");
-        if (!res.ok) throw new Error("Failed to load shelf");
-        const { books: fetched } = (await res.json()) as { books: Book[] };
-        if (cancelled) return;
-        setBooks(fetched);
-        setLoadState("ready");
-      } catch {
-        if (!cancelled) setLoadState("error");
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  function handleUploaded(book: Book) {
-    setBooks((prev) => [book, ...prev]);
-  }
-
-  function handleDelete(bookId: string) {
-    const prev = books;
-    setBooks((current) => current.filter((b) => b.id !== bookId));
-    fetch(`/api/books/${bookId}`, { method: "DELETE" }).catch(() => {
-      // best-effort rollback if the delete failed server-side
-      setBooks(prev);
-    });
-  }
-
-  if (loadState === "loading") {
-    return (
-      <div className="py-24 text-center">
-        <p className="font-ui text-sm text-muted-foreground">Gathering your books…</p>
+function ShelfSkeleton() {
+  return (
+    <div>
+      <p role="status" className="sr-only">
+        Gathering your books…
+      </p>
+      <div
+        aria-hidden="true"
+        className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4"
+      >
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="space-y-3">
+            <div
+              className="aspect-[3/4] w-full animate-pulse rounded-lg motion-reduce:animate-none"
+              style={{ background: "var(--muted)" }}
+            />
+            <div
+              className="h-3 w-4/5 animate-pulse rounded motion-reduce:animate-none"
+              style={{ background: "var(--muted)" }}
+            />
+            <div
+              className="h-2.5 w-2/5 animate-pulse rounded motion-reduce:animate-none"
+              style={{ background: "var(--muted)" }}
+            />
+          </div>
+        ))}
       </div>
-    );
+    </div>
+  );
+}
+
+function MyShelf({
+  books,
+  loadState,
+  onUploaded,
+  onDelete,
+}: {
+  books: Book[];
+  loadState: LoadState;
+  onUploaded: (book: Book) => void;
+  onDelete: (bookId: string) => void;
+}) {
+  if (loadState === "loading") {
+    return <ShelfSkeleton />;
   }
 
   if (loadState === "error") {
@@ -114,15 +184,15 @@ function MyShelf() {
   if (books.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center py-24 text-center">
-        <h2 className="font-display max-w-xl text-3xl leading-tight sm:text-4xl">
+        <h2 className="max-w-xl font-display text-3xl leading-tight sm:text-4xl">
           The shelf awaits its first book.
         </h2>
-        <p className="font-ui mt-6 max-w-md text-base opacity-70">
-          Upload a book to begin — the world inside it will follow. Or visit Discover
-          for books others have shared.
+        <p className="mt-6 max-w-md font-ui text-base opacity-70">
+          Upload a book to begin — the world inside it will follow. Or visit
+          Discover for books others have shared.
         </p>
         <div className="mt-10">
-          <UploadBook variant="hero" onUploaded={handleUploaded} />
+          <UploadBook variant="hero" onUploaded={onUploaded} />
         </div>
       </div>
     );
@@ -134,7 +204,9 @@ function MyShelf() {
     const bT = b.progress?.lastReadAt ?? "";
     const bestT = best.progress?.lastReadAt ?? "";
     if (bT !== bestT) return bT > bestT ? b : best;
-    return (b.progress?.percent ?? 0) > (best.progress?.percent ?? 0) ? b : best;
+    return (b.progress?.percent ?? 0) > (best.progress?.percent ?? 0)
+      ? b
+      : best;
   }, null);
 
   const gridBooks = continueBook
@@ -147,9 +219,9 @@ function MyShelf() {
 
       <div className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4">
         {gridBooks.map((book) => (
-          <BookCard key={book.id} book={book} onDelete={handleDelete} />
+          <BookCard key={book.id} book={book} onDelete={onDelete} />
         ))}
-        <UploadBook onUploaded={handleUploaded} />
+        <UploadBook onUploaded={onUploaded} />
       </div>
     </div>
   );
@@ -163,14 +235,22 @@ function ContinueReadingHero({ book }: { book: Book }) {
   return (
     <div className="mb-10 flex flex-col gap-6 rounded-lg border border-border bg-card p-6 sm:flex-row">
       <div className="w-full sm:w-40">
-        <TypographicCover bookId={book.id} title={book.title} author={book.author} />
+        <TypographicCover
+          bookId={book.id}
+          title={book.title}
+          author={book.author}
+        />
       </div>
 
       <div className="flex flex-1 flex-col justify-center">
         <p className="eyebrow mb-2">CONTINUE READING</p>
-        <h2 className="font-display text-2xl leading-tight sm:text-3xl">{book.title}</h2>
+        <h2 className="font-display text-2xl leading-tight sm:text-3xl">
+          {book.title}
+        </h2>
         {book.author ? (
-          <p className="font-ui mt-1 text-sm text-muted-foreground">{book.author}</p>
+          <p className="mt-1 font-ui text-sm text-muted-foreground">
+            {book.author}
+          </p>
         ) : null}
 
         {progress ? (
@@ -178,7 +258,9 @@ function ContinueReadingHero({ book }: { book: Book }) {
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-[var(--world-accent,var(--primary))]"
-                style={{ width: `${Math.min(100, Math.max(0, progress.percent))}%` }}
+                style={{
+                  width: `${Math.min(100, Math.max(0, progress.percent))}%`,
+                }}
               />
             </div>
           </div>
@@ -186,7 +268,7 @@ function ContinueReadingHero({ book }: { book: Book }) {
 
         <Link
           href={`/books/${book.id}/read`}
-          className="font-ui mt-5 inline-block w-fit rounded-full bg-[var(--primary)] px-6 py-2.5 text-sm font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
+          className="mt-5 inline-block w-fit rounded-full bg-[var(--primary)] px-6 py-2.5 font-ui text-sm font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
         >
           Continue — page {currentPage} of {totalPages}
         </Link>

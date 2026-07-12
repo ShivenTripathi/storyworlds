@@ -29,7 +29,8 @@ function normalizeKind(kind: string): (typeof KIND_ORDER)[number] | "other" {
   if (k === "character" || k === "person") return "character";
   if (k === "place" || k === "location") return "place";
   if (k === "object" || k === "item") return "object";
-  if (k === "faction" || k === "group" || k === "organization") return "faction";
+  if (k === "faction" || k === "group" || k === "organization")
+    return "faction";
   return "other";
 }
 
@@ -44,10 +45,12 @@ function groupEntities(entities: WorldEntity[]) {
   const ordered: { key: string; label: string; entities: WorldEntity[] }[] = [];
   for (const kind of KIND_ORDER) {
     const list = groups.get(kind);
-    if (list?.length) ordered.push({ key: kind, label: KIND_LABELS[kind], entities: list });
+    if (list?.length)
+      ordered.push({ key: kind, label: KIND_LABELS[kind], entities: list });
   }
   const other = groups.get("other");
-  if (other?.length) ordered.push({ key: "other", label: "OTHERS", entities: other });
+  if (other?.length)
+    ordered.push({ key: "other", label: "OTHERS", entities: other });
   return ordered;
 }
 
@@ -56,9 +59,16 @@ function groupEntities(entities: WorldEntity[]) {
  * click to reveal the deeper "brass plaque" details. Hidden entities
  * (beyond the reader's spoiler frontier) are never named — only counted.
  */
-export function CastList({ entities, counts, className = "", bookId, onChat }: CastListProps) {
+export function CastList({
+  entities,
+  counts,
+  className = "",
+  bookId,
+  onChat,
+}: CastListProps) {
   const groups = groupEntities(entities);
-  const hidden = counts && counts.total > counts.visible ? counts.total - counts.visible : 0;
+  const hidden =
+    counts && counts.total > counts.visible ? counts.total - counts.visible : 0;
 
   if (groups.length === 0 && hidden === 0) {
     return (
@@ -87,9 +97,10 @@ export function CastList({ entities, counts, className = "", bookId, onChat }: C
       ))}
 
       {hidden > 0 ? (
-        <p className="font-ui flex items-center gap-1.5 text-xs text-muted-foreground italic">
+        <p className="flex items-center gap-1.5 font-ui text-xs text-muted-foreground italic">
           <LockGlyph />
-          {hidden} more {hidden === 1 ? "waits" : "await you"} deeper in the story
+          {hidden} more {hidden === 1 ? "waits" : "await you"} deeper in the
+          story
         </p>
       ) : null}
     </div>
@@ -108,7 +119,10 @@ function EntityRow({
   const [expanded, setExpanded] = useState(false);
   const { attributes } = entity;
   const hasDetail = Boolean(
-    attributes?.internalState || attributes?.keyMotivation || entity.visualDescription || attributes?.scars,
+    attributes?.internalState ||
+    attributes?.keyMotivation ||
+    entity.visualDescription ||
+    attributes?.scars,
   );
   const expandable = hasDetail || Boolean(bookId);
 
@@ -118,25 +132,43 @@ function EntityRow({
         type="button"
         onClick={() => expandable && setExpanded((v) => !v)}
         aria-expanded={expandable ? expanded : undefined}
-        className="flex w-full flex-col items-start gap-0.5 rounded-md px-2 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        disabled={!expandable}
+        className="flex w-full items-start justify-between gap-2 rounded-md px-2 py-2 text-left focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none disabled:cursor-default"
       >
-        <span className="font-display text-base">{entity.name}</span>
-        {attributes?.role ? (
-          <span className="font-ui line-clamp-1 text-xs text-muted-foreground">
-            {attributes.role}
-          </span>
+        <span className="flex flex-col items-start gap-0.5">
+          <span className="font-display text-base">{entity.name}</span>
+          {attributes?.role ? (
+            <span className="line-clamp-1 font-ui text-xs text-muted-foreground">
+              {attributes.role}
+            </span>
+          ) : null}
+        </span>
+        {expandable ? (
+          <ChevronGlyph
+            className={`mt-1.5 shrink-0 text-muted-foreground transition-transform duration-200 motion-reduce:transition-none ${
+              expanded ? "rotate-90" : ""
+            }`}
+          />
         ) : null}
       </button>
 
       {expanded && expandable ? (
         <div className="space-y-2 px-2 pb-3">
           {attributes?.internalState ? (
-            <DetailRow label="INTERNAL STATE" value={attributes.internalState} />
+            <DetailRow
+              label="INTERNAL STATE"
+              value={attributes.internalState}
+            />
           ) : null}
           {attributes?.keyMotivation ? (
-            <DetailRow label="KEY MOTIVATION" value={attributes.keyMotivation} />
+            <DetailRow
+              label="KEY MOTIVATION"
+              value={attributes.keyMotivation}
+            />
           ) : null}
-          {attributes?.scars ? <DetailRow label="SCARS" value={attributes.scars} /> : null}
+          {attributes?.scars ? (
+            <DetailRow label="SCARS" value={attributes.scars} />
+          ) : null}
           {entity.visualDescription ? (
             <DetailRow label="APPEARANCE" value={entity.visualDescription} />
           ) : null}
@@ -179,11 +211,52 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ChevronGlyph({ className = "" }: { className?: string }) {
+  return (
+    <svg
+      width="10"
+      height="10"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="M6 3l5 5-5 5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function LockGlyph() {
   return (
-    <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true" className="shrink-0">
-      <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" stroke="currentColor" strokeWidth="1.2" />
-      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 16 16"
+      fill="none"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <rect
+        x="3.5"
+        y="7"
+        width="9"
+        height="6.5"
+        rx="1.2"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <path
+        d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

@@ -39,7 +39,13 @@ function localId() {
  * the ending), message history, streaming composer. Self-contained —
  * fetches its own history per mode and drives its own send/stream cycle.
  */
-export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessage }: ChatPanelProps) {
+export function ChatPanel({
+  bookId,
+  entityId,
+  entityName,
+  chunkIdx,
+  initialMessage,
+}: ChatPanelProps) {
   const [mode, setMode] = useState<ChatMode>("story_so_far");
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -57,17 +63,24 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
   const stickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const loadHistory = useCallback(async (m: ChatMode) => {
-    setHistoryLoaded(false);
-    try {
-      const { messages: loaded } = await fetchChatHistory(bookId, entityId, m);
-      setMessages(loaded);
-    } catch {
-      setMessages([]);
-    } finally {
-      setHistoryLoaded(true);
-    }
-  }, [bookId, entityId]);
+  const loadHistory = useCallback(
+    async (m: ChatMode) => {
+      setHistoryLoaded(false);
+      try {
+        const { messages: loaded } = await fetchChatHistory(
+          bookId,
+          entityId,
+          m,
+        );
+        setMessages(loaded);
+      } catch {
+        setMessages([]);
+      } finally {
+        setHistoryLoaded(true);
+      }
+    },
+    [bookId, entityId],
+  );
 
   // Mode changed — sync with the server (load that mode's history) and,
   // for a first-time "after the ending" activation, surface the confirm
@@ -77,7 +90,11 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     void loadHistory(mode);
-    setConfirmMode(mode === "after_ending" && !acknowledgedRef.current.after_ending ? mode : null);
+    setConfirmMode(
+      mode === "after_ending" && !acknowledgedRef.current.after_ending
+        ? mode
+        : null,
+    );
   }, [mode, loadHistory]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -92,7 +109,8 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
   }, []);
 
   useEffect(() => {
-    if (stickToBottomRef.current) scrollToBottom(historyLoaded ? "auto" : "auto");
+    if (stickToBottomRef.current)
+      scrollToBottom(historyLoaded ? "auto" : "auto");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, historyLoaded]);
 
@@ -128,7 +146,13 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
       setMessages((prev) => [
         ...prev,
         userMsg,
-        { id: assistantId, role: "assistant", content: "", createdAt: new Date().toISOString(), streaming: true },
+        {
+          id: assistantId,
+          role: "assistant",
+          content: "",
+          createdAt: new Date().toISOString(),
+          streaming: true,
+        },
       ]);
       stickToBottomRef.current = true;
       setSending(true);
@@ -146,15 +170,23 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
           signal: controller.signal,
           onDelta: (delta) => {
             setMessages((prev) =>
-              prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + delta } : m)),
+              prev.map((m) =>
+                m.id === assistantId ? { ...m, content: m.content + delta } : m,
+              ),
             );
           },
         });
-        setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, streaming: false } : m)));
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, streaming: false } : m,
+          ),
+        );
       } catch (err) {
         if (err instanceof ChatSpoilerGateError) {
           // Drop the optimistic pair and re-prompt for confirmation.
-          setMessages((prev) => prev.filter((m) => m.id !== userMsg.id && m.id !== assistantId));
+          setMessages((prev) =>
+            prev.filter((m) => m.id !== userMsg.id && m.id !== assistantId),
+          );
           pendingSendRef.current = text;
           setConfirmMode(mode);
         } else {
@@ -165,7 +197,9 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
                     ...m,
                     streaming: false,
                     failed: true,
-                    content: m.content || "…the connection to the world wavers. Try again.",
+                    content:
+                      m.content ||
+                      "…the connection to the world wavers. Try again.",
                   }
                 : m,
             ),
@@ -222,9 +256,20 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-4 border-b pb-2" style={{ borderColor: "var(--world-frame)" }}>
-        <ModeButton label="Story so far" active={mode === "story_so_far"} onClick={() => setMode("story_so_far")} />
-        <ModeButton label="After the ending" active={mode === "after_ending"} onClick={() => setMode("after_ending")} />
+      <div
+        className="flex items-center gap-4 border-b pb-2"
+        style={{ borderColor: "var(--world-frame)" }}
+      >
+        <ModeButton
+          label="Story so far"
+          active={mode === "story_so_far"}
+          onClick={() => setMode("story_so_far")}
+        />
+        <ModeButton
+          label="After the ending"
+          active={mode === "after_ending"}
+          onClick={() => setMode("after_ending")}
+        />
       </div>
 
       <div
@@ -233,9 +278,14 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
         className="flex-1 space-y-4 overflow-y-auto py-4"
       >
         {!historyLoaded ? (
-          <p className="font-ui text-sm text-muted-foreground">Loading the conversation…</p>
+          <p className="font-ui text-sm text-muted-foreground">
+            Loading the conversation…
+          </p>
         ) : showConfirm ? (
-          <SpoilerConfirmPanel entityName={entityName} onConfirmed={handleConfirmed} />
+          <SpoilerConfirmPanel
+            entityName={entityName}
+            onConfirmed={handleConfirmed}
+          />
         ) : showEmptyState ? (
           <div className="space-y-2">
             <p className="font-ui text-sm text-muted-foreground italic">
@@ -246,7 +296,7 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
                 key={q}
                 type="button"
                 onClick={() => handleStarter(q)}
-                className="font-ui block w-full rounded-md border px-3 py-2 text-left text-sm hover:bg-[var(--muted)]"
+                className="block w-full rounded-md border px-3 py-2 text-left font-ui text-sm hover:bg-[var(--muted)]"
                 style={{ borderColor: "var(--world-frame)" }}
               >
                 {q}
@@ -259,7 +309,11 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
       </div>
 
       {!showConfirm ? (
-        <form onSubmit={handleSubmit} className="flex items-end gap-2 border-t pt-3" style={{ borderColor: "var(--world-frame)" }}>
+        <form
+          onSubmit={handleSubmit}
+          className="flex items-end gap-2 border-t pt-3"
+          style={{ borderColor: "var(--world-frame)" }}
+        >
           <textarea
             ref={textareaRef}
             value={input}
@@ -267,14 +321,14 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
             onKeyDown={handleKeyDown}
             rows={1}
             placeholder={`Say something to ${entityName}…`}
-            className="font-ui min-h-9 flex-1 resize-none rounded-md border bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            className="min-h-9 flex-1 resize-none rounded-md border bg-transparent px-3 py-2 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
             style={{ borderColor: "var(--world-frame)" }}
           />
           <button
             type="submit"
             disabled={sending || !input.trim()}
             aria-label="Send message"
-            className="font-ui flex h-9 items-center justify-center rounded-full bg-[var(--world-accent)] px-4 text-xs font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90 disabled:opacity-40"
+            className="flex h-9 items-center justify-center rounded-full bg-[var(--world-accent)] px-4 font-ui text-xs font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             Send
           </button>
@@ -284,16 +338,24 @@ export function ChatPanel({ bookId, entityId, entityName, chunkIdx, initialMessa
   );
 }
 
-function ModeButton({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) {
+function ModeButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="eyebrow -mb-px border-b-2 pb-2 transition-colors"
+      className="eyebrow -mb-px rounded-t-sm border-b-2 pb-2 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
       style={{
         borderColor: active ? "var(--world-accent)" : "transparent",
-        color: active ? "var(--card-foreground)" : undefined,
+        color: active ? "var(--card-foreground)" : "var(--muted-foreground)",
       }}
     >
       {label}
@@ -301,29 +363,46 @@ function ModeButton({ label, active, onClick }: { label: string; active: boolean
   );
 }
 
-function MessageList({ messages, entityName }: { messages: LocalMessage[]; entityName: string }) {
+function MessageList({
+  messages,
+  entityName,
+}: {
+  messages: LocalMessage[];
+  entityName: string;
+}) {
   return (
     <div className="space-y-3">
       {messages.map((m, i) => {
         const isFirstOfRun = i === 0 || messages[i - 1].role !== m.role;
         return (
-          <div key={m.id} className={m.role === "user" ? "flex justify-end" : "flex justify-start"}>
+          <div
+            key={m.id}
+            className={
+              m.role === "user" ? "flex justify-end" : "flex justify-start"
+            }
+          >
             {m.role === "user" ? (
               <div
-                className="font-ui max-w-[85%] rounded-md px-3 py-2 text-sm"
+                className="max-w-[85%] rounded-md px-3 py-2 font-ui text-sm"
                 style={{ background: "var(--world-surface)" }}
               >
                 {m.content}
               </div>
             ) : (
               <div className="max-w-[90%]">
-                {isFirstOfRun ? <p className="eyebrow mb-1">{entityName}</p> : null}
+                {isFirstOfRun ? (
+                  <p className="eyebrow mb-1">{entityName}</p>
+                ) : null}
                 <p
                   className={`font-reading text-sm leading-relaxed ${m.failed ? "text-muted-foreground italic" : ""}`}
                 >
                   {m.content}
                   {m.streaming ? (
-                    <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse align-middle" style={{ background: "var(--world-accent)" }} aria-hidden="true" />
+                    <span
+                      className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse align-middle"
+                      style={{ background: "var(--world-accent)" }}
+                      aria-hidden="true"
+                    />
                   ) : null}
                 </p>
               </div>
@@ -335,7 +414,13 @@ function MessageList({ messages, entityName }: { messages: LocalMessage[]; entit
   );
 }
 
-function SpoilerConfirmPanel({ entityName, onConfirmed }: { entityName: string; onConfirmed: () => void }) {
+function SpoilerConfirmPanel({
+  entityName,
+  onConfirmed,
+}: {
+  entityName: string;
+  onConfirmed: () => void;
+}) {
   const { progress, pressing, handlers } = usePressAndHold(onConfirmed, 600);
 
   return (
@@ -349,7 +434,8 @@ function SpoilerConfirmPanel({ entityName, onConfirmed }: { entityName: string; 
       <button
         type="button"
         {...handlers}
-        className="font-ui relative mx-auto flex h-11 w-full max-w-[220px] items-center justify-center overflow-hidden rounded-full border text-xs font-medium select-none"
+        aria-describedby="spoiler-confirm-hint"
+        className="relative mx-auto flex h-11 w-full max-w-[220px] items-center justify-center overflow-hidden rounded-full border font-ui text-xs font-medium select-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
         style={{ borderColor: "var(--world-accent)" }}
       >
         <span
@@ -365,6 +451,9 @@ function SpoilerConfirmPanel({ entityName, onConfirmed }: { entityName: string; 
           {pressing ? "Hold to confirm…" : "Press and hold: I understand"}
         </span>
       </button>
+      <span id="spoiler-confirm-hint" className="sr-only">
+        Press and hold, or hold Space or Enter, to confirm.
+      </span>
     </div>
   );
 }

@@ -42,16 +42,12 @@ export function DiscoverGrid() {
   }
 
   if (loadState === "loading") {
-    return (
-      <p className="font-ui py-24 text-center text-sm text-muted-foreground">
-        Browsing the stacks…
-      </p>
-    );
+    return <DiscoverSkeleton />;
   }
 
   if (loadState === "error") {
     return (
-      <p className="font-ui py-24 text-center text-sm text-[var(--destructive)]">
+      <p className="py-24 text-center font-ui text-sm text-[var(--destructive)]">
         Discover couldn&apos;t be reached. Try refreshing.
       </p>
     );
@@ -59,7 +55,7 @@ export function DiscoverGrid() {
 
   if (books.length === 0) {
     return (
-      <p className="font-ui py-24 text-center text-sm text-muted-foreground">
+      <p className="py-24 text-center font-ui text-sm text-muted-foreground">
         Nothing published yet — check back soon.
       </p>
     );
@@ -70,6 +66,37 @@ export function DiscoverGrid() {
       {books.map((book) => (
         <DiscoverCard key={book.id} book={book} onAdded={handleAdded} />
       ))}
+    </div>
+  );
+}
+
+function DiscoverSkeleton() {
+  return (
+    <div>
+      <p role="status" className="sr-only">
+        Browsing the stacks…
+      </p>
+      <div
+        aria-hidden="true"
+        className="grid grid-cols-2 gap-6 md:grid-cols-3 lg:grid-cols-4"
+      >
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div key={i} className="space-y-3">
+            <div
+              className="aspect-[3/4] w-full animate-pulse rounded-lg motion-reduce:animate-none"
+              style={{ background: "var(--muted)" }}
+            />
+            <div
+              className="h-3 w-4/5 animate-pulse rounded motion-reduce:animate-none"
+              style={{ background: "var(--muted)" }}
+            />
+            <div
+              className="h-2.5 w-2/5 animate-pulse rounded motion-reduce:animate-none"
+              style={{ background: "var(--muted)" }}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -89,7 +116,9 @@ function DiscoverCard({
     setAdding(true);
     setFailed(false);
     try {
-      const res = await fetch(`/api/marketplace/${book.id}/add`, { method: "POST" });
+      const res = await fetch(`/api/marketplace/${book.id}/add`, {
+        method: "POST",
+      });
       if (!res.ok) throw new Error("add failed");
       onAdded(book.id);
     } catch {
@@ -109,7 +138,7 @@ function DiscoverCard({
       />
 
       <div className="mt-3 space-y-0.5">
-        <p className="font-display line-clamp-2 text-sm leading-snug text-foreground">
+        <p className="line-clamp-2 font-display text-sm leading-snug text-foreground">
           {book.title}
         </p>
         {book.author ? (
@@ -117,12 +146,14 @@ function DiscoverCard({
         ) : null}
       </div>
 
-      <p className="font-ui mt-1 text-[11px] text-muted-foreground italic">World included</p>
+      <p className="mt-1 font-ui text-[11px] text-muted-foreground italic">
+        World included
+      </p>
 
       {onShelf ? (
         <Link
           href={`/books/${book.id}`}
-          className="font-ui mt-2 inline-block text-xs text-muted-foreground underline underline-offset-2"
+          className="mt-2 inline-block font-ui text-xs text-muted-foreground underline underline-offset-2"
         >
           On your shelf — Open
         </Link>
@@ -131,14 +162,14 @@ function DiscoverCard({
           type="button"
           onClick={() => void handleAdd()}
           disabled={adding}
-          className="font-ui mt-2 rounded-full bg-[var(--primary)] px-3 py-1 text-xs font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-50"
+          className="mt-2 rounded-full bg-[var(--primary)] px-3 py-1 font-ui text-xs font-medium text-[var(--primary-foreground)] transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none disabled:opacity-50"
         >
           {adding ? "Adding…" : "Add to shelf"}
         </button>
       )}
 
       {failed ? (
-        <p className="font-ui mt-1 text-[11px] text-[var(--destructive)]">
+        <p className="mt-1 font-ui text-[11px] text-[var(--destructive)]">
           Couldn&apos;t add — try again.
         </p>
       ) : null}

@@ -23,6 +23,10 @@ export interface Book {
   createdAt: string;
   visibility?: string | null;
   themeArchetype?: string | null;
+  /** 'public_subsidized' | 'private_premium' | 'catalog' | null (legacy).
+   * See CLAUDE.md "THE MODEL" — drives the upload dialog's pricing copy and
+   * the Discover "contributed by a reader" badge. */
+  pricingTier?: string | null;
   /** Present on /api/marketplace and /api/books responses: whether this
    * book is on the shelf because the caller owns it or added it from
    * Discover. */

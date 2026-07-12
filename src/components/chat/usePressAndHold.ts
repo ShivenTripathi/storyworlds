@@ -72,6 +72,21 @@ export function usePressAndHold(onComplete: () => void, durationMs = 600) {
     onPointerUp: cancel,
     onPointerLeave: cancel,
     onPointerCancel: cancel,
+    // Keyboard equivalent of the pointer gesture: holding Space/Enter down
+    // starts the same timed hold, and releasing the key (or losing focus)
+    // before it completes cancels it — mirrors onPointerDown/onPointerUp so
+    // this signature interaction is fully operable without a pointer.
+    onKeyDown: (e: React.KeyboardEvent) => {
+      if (e.key !== " " && e.key !== "Enter") return;
+      e.preventDefault();
+      if (e.repeat) return;
+      start();
+    },
+    onKeyUp: (e: React.KeyboardEvent) => {
+      if (e.key !== " " && e.key !== "Enter") return;
+      cancel();
+    },
+    onBlur: cancel,
   };
 
   return { progress, pressing, handlers };

@@ -19,7 +19,8 @@ export function BookCard({ book, onDelete }: BookCardProps) {
   const percent = book.progress?.percent ?? 0;
   const started = (book.progress?.currentChunk ?? 0) > 0;
   const isFailed = book.status === "failed";
-  const isExtracting = book.status === "extracting" || book.status === "uploaded";
+  const isExtracting =
+    book.status === "extracting" || book.status === "uploaded";
 
   async function handleConfirmDelete() {
     setDeleting(true);
@@ -31,16 +32,22 @@ export function BookCard({ book, onDelete }: BookCardProps) {
       <Link
         href={`/books/${book.id}`}
         aria-label={`Open ${book.title}`}
-        className={`block rounded-lg outline-none transition-all duration-200 ease-out focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-          deleting ? "pointer-events-none opacity-40" : "hover:-translate-y-0.5 hover:shadow-lg"
+        className={`block rounded-lg transition-all duration-200 ease-out outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+          deleting
+            ? "pointer-events-none opacity-40"
+            : "hover:-translate-y-0.5 hover:shadow-lg"
         }`}
       >
         <div className="relative">
-          <TypographicCover bookId={book.id} title={book.title} author={book.author} />
+          <TypographicCover
+            bookId={book.id}
+            title={book.title}
+            author={book.author}
+          />
 
           {isFailed ? (
             <div className="absolute inset-0 flex items-end rounded-lg bg-[var(--oxblood-500)]/20">
-              <p className="font-ui w-full bg-[var(--oxblood-500)]/80 px-3 py-1.5 text-center text-xs font-medium text-[var(--parchment-100)]">
+              <p className="w-full bg-[var(--oxblood-500)]/80 px-3 py-1.5 text-center font-ui text-xs font-medium text-[var(--parchment-100)]">
                 extraction failed
               </p>
             </div>
@@ -48,7 +55,7 @@ export function BookCard({ book, onDelete }: BookCardProps) {
 
           {isExtracting ? (
             <div className="absolute inset-0 flex items-end rounded-lg">
-              <p className="font-ui w-full animate-pulse bg-[var(--ink-950)]/70 px-3 py-1.5 text-center text-xs font-medium text-[var(--parchment-100)]">
+              <p className="w-full animate-pulse bg-[var(--ink-950)]/70 px-3 py-1.5 text-center font-ui text-xs font-medium text-[var(--parchment-100)]">
                 preparing…
               </p>
             </div>
@@ -65,11 +72,13 @@ export function BookCard({ book, onDelete }: BookCardProps) {
         </div>
 
         <div className="mt-3 space-y-0.5">
-          <p className="font-display line-clamp-2 text-sm leading-snug text-foreground">
+          <p className="line-clamp-2 font-display text-sm leading-snug text-foreground">
             {book.title}
           </p>
           {book.author ? (
-            <p className="font-ui text-xs text-muted-foreground">{book.author}</p>
+            <p className="font-ui text-xs text-muted-foreground">
+              {book.author}
+            </p>
           ) : null}
         </div>
       </Link>
@@ -85,12 +94,12 @@ export function BookCard({ book, onDelete }: BookCardProps) {
               e.stopPropagation();
               setMenu("open");
             }}
-            className="font-ui flex h-7 w-7 items-center justify-center rounded-full bg-[var(--ink-950)]/60 text-[var(--parchment-100)] opacity-0 transition-opacity duration-200 group-hover:opacity-100 hover:bg-[var(--ink-950)]/80 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--ink-950)]/60 font-ui text-base text-[var(--parchment-100)] opacity-70 transition-opacity duration-200 group-hover:opacity-100 hover:bg-[var(--ink-950)]/80 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
           >
             ⋯
           </button>
         ) : menu === "open" ? (
-          <div className="font-ui overflow-hidden rounded-md border border-border bg-card text-xs shadow-lg">
+          <div className="overflow-hidden rounded-md border border-border bg-card font-ui text-xs shadow-lg">
             <button
               type="button"
               onClick={(e) => {
@@ -115,7 +124,7 @@ export function BookCard({ book, onDelete }: BookCardProps) {
             </button>
           </div>
         ) : (
-          <div className="font-ui flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 text-xs shadow-lg">
+          <div className="flex items-center gap-1 rounded-md border border-border bg-card px-2 py-1 font-ui text-xs shadow-lg">
             <span className="mr-1 text-muted-foreground">Remove?</span>
             <button
               type="button"

@@ -38,13 +38,21 @@ interface WorldRailProps {
  * drives its own analysis job if the reader chooses to awaken it from
  * here, mirroring (a lighter version of) the book detail page's flow.
  */
-export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: WorldRailProps) {
+export function WorldRail({
+  bookId,
+  open,
+  onClose,
+  currentChunk,
+  overlay,
+}: WorldRailProps) {
   const [world, setWorld] = useState<World | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [tab, setTab] = useState<WorldTab>("scene");
   const [chatEntityId, setChatEntityId] = useState<string | null>(null);
-  const [chatInitialMessage, setChatInitialMessage] = useState<string | undefined>(undefined);
+  const [chatInitialMessage, setChatInitialMessage] = useState<
+    string | undefined
+  >(undefined);
   const { job } = useJob(jobId);
   const panelRef = useRef<HTMLDivElement>(null);
   const prevJobStatus = useRef<string | null>(null);
@@ -107,10 +115,10 @@ export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: Worl
     [world],
   );
 
-  if (!open) return null;
-
   const status = world?.status ?? "none";
-  const isPending = status === "pending" || (job && (job.status === "queued" || job.status === "running"));
+  const isPending =
+    status === "pending" ||
+    (job && (job.status === "queued" || job.status === "running"));
   const isFailed = status === "failed" || job?.status === "failed";
 
   return (
@@ -119,44 +127,67 @@ export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: Worl
       tabIndex={-1}
       role="complementary"
       aria-label="Story world"
-      className="fixed inset-x-0 bottom-0 z-50 h-[60vh] overflow-y-auto rounded-t-lg border-t focus:outline-none md:inset-y-0 md:right-0 md:left-auto md:h-full md:w-[340px] md:rounded-none md:border-t-0 md:border-l"
+      aria-hidden={!open}
+      inert={!open ? true : undefined}
+      className={`fixed inset-x-0 bottom-0 z-50 h-[60vh] overflow-y-auto rounded-t-lg border-t transition-transform duration-[250ms] ease-out focus:outline-none motion-reduce:transition-none md:inset-y-0 md:right-0 md:left-auto md:h-full md:w-[340px] md:rounded-none md:border-t-0 md:border-l ${
+        open
+          ? "translate-y-0 md:translate-x-0"
+          : "translate-y-full md:translate-x-full md:translate-y-0"
+      }`}
       style={{
         background: "var(--world-surface)",
         borderColor: "var(--world-frame)",
       }}
     >
-      {/* Mobile drag handle (visual only) */}
-      <div
-        aria-hidden="true"
-        className="mx-auto mt-2 h-1 w-10 rounded-full md:hidden"
-        style={{ background: "var(--world-frame)" }}
-      />
-
       <div className="flex items-center justify-between px-4 py-3">
         <p className="eyebrow">THE WORLD</p>
         <button
           type="button"
           aria-label="Close world panel"
           onClick={onClose}
-          className="flex h-8 w-8 items-center justify-center rounded-full text-lg opacity-70 hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+          tabIndex={open ? 0 : -1}
+          className="flex h-11 w-11 items-center justify-center rounded-full text-lg opacity-70 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
         >
           ×
         </button>
       </div>
 
       {loaded && status === "completed" && world ? (
-        <div className="flex items-center gap-4 border-b px-4 pb-2" style={{ borderColor: "var(--world-frame)" }}>
-          <TabButton label="Scene" active={tab === "scene"} onClick={() => setTab("scene")} />
-          <TabButton label="Cast" active={tab === "cast"} onClick={() => setTab("cast")} />
-          <TabButton label="Chat" active={tab === "chat"} onClick={() => setTab("chat")} />
+        <div
+          className="flex items-center gap-4 border-b px-4 pb-2"
+          style={{ borderColor: "var(--world-frame)" }}
+        >
+          <TabButton
+            label="Scene"
+            active={tab === "scene"}
+            onClick={() => setTab("scene")}
+          />
+          <TabButton
+            label="Cast"
+            active={tab === "cast"}
+            onClick={() => setTab("cast")}
+          />
+          <TabButton
+            label="Chat"
+            active={tab === "chat"}
+            onClick={() => setTab("chat")}
+          />
         </div>
       ) : null}
 
-      <div className="px-4 pb-8 pt-4">
+      <div className="px-4 pt-4 pb-8">
         {!loaded ? (
-          <p className="font-ui text-sm text-muted-foreground">Opening the world…</p>
+          <p className="font-ui text-sm text-muted-foreground">
+            Opening the world…
+          </p>
         ) : status === "completed" && world ? (
-          <div className={tab === "chat" ? "flex h-[calc(60vh-96px)] flex-col md:h-[calc(100vh-96px)]" : "space-y-6"}>
+          <div
+            className={
+              tab === "chat"
+                ? "flex h-[calc(60vh-96px)] flex-col md:h-[calc(100vh-96px)]"
+                : "space-y-6"
+            }
+          >
             {tab === "scene" ? (
               <SceneView
                 bookId={bookId}
@@ -167,7 +198,9 @@ export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: Worl
             ) : tab === "cast" ? (
               <>
                 {world.settingDescription ? (
-                  <p className="font-reading text-sm leading-relaxed">{world.settingDescription}</p>
+                  <p className="font-reading text-sm leading-relaxed">
+                    {world.settingDescription}
+                  </p>
                 ) : null}
                 {world.entities && world.entities.length > 0 ? (
                   <CastList
@@ -217,7 +250,7 @@ export function WorldRail({ bookId, open, onClose, currentChunk, overlay }: Worl
             <button
               type="button"
               onClick={() => void handleAwaken()}
-              className="font-ui rounded-full bg-[var(--world-accent)] px-4 py-2 text-xs font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90"
+              className="rounded-full bg-[var(--world-accent)] px-4 py-2 font-ui text-xs font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90"
             >
               Awaken the world
             </button>
@@ -250,7 +283,9 @@ function ChatTab({
   onBack: () => void;
 }) {
   const characters = (entities ?? []).filter(isCharacter);
-  const selected = entityId ? characters.find((e) => e.id === entityId) : undefined;
+  const selected = entityId
+    ? characters.find((e) => e.id === entityId)
+    : undefined;
 
   if (!selected) {
     if (characters.length === 0) {
@@ -269,7 +304,7 @@ function ChatTab({
               <button
                 type="button"
                 onClick={() => onSelect(entity.id)}
-                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--muted)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-2 text-left hover:bg-[var(--muted)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
               >
                 <span className="font-display text-base">{entity.name}</span>
                 <ProgressChip introducedAtChunk={entity.introducedAtChunk} />
@@ -286,10 +321,22 @@ function ChatTab({
       <button
         type="button"
         onClick={onBack}
-        className="font-ui mb-2 flex items-center gap-1.5 self-start text-xs text-muted-foreground hover:text-[var(--card-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        className="mb-2 flex items-center gap-1.5 self-start font-ui text-xs text-muted-foreground hover:text-[var(--card-foreground)] focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
       >
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 16 16"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M10 3L5 8l5 5"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
         All characters
       </button>
@@ -321,10 +368,10 @@ function TabButton({
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className="eyebrow -mb-px border-b-2 pb-2 transition-colors"
+      className="eyebrow -mb-px rounded-t-sm border-b-2 pb-2 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
       style={{
         borderColor: active ? "var(--world-accent)" : "transparent",
-        color: active ? "var(--card-foreground)" : undefined,
+        color: active ? "var(--card-foreground)" : "var(--muted-foreground)",
       }}
     >
       {label}
