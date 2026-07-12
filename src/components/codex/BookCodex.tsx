@@ -109,7 +109,7 @@ export function BookCodex({ bookId }: BookCodexProps) {
   if (loadState === "error") {
     return (
       <p className="py-16 text-center font-ui text-sm text-[var(--destructive)]">
-        The Codex couldn&apos;t be reached. Try refreshing.
+        Your discoveries couldn&apos;t be reached. Try refreshing.
       </p>
     );
   }
@@ -117,7 +117,7 @@ export function BookCodex({ bookId }: BookCodexProps) {
   if (!data || data.cards.length === 0) {
     return (
       <div className="py-16 text-center">
-        <p className="eyebrow mb-2">THE CODEX</p>
+        <p className="eyebrow mb-2">YOUR DISCOVERIES</p>
         <p className="font-display text-lg text-muted-foreground italic">
           This world is still forming…
         </p>
@@ -136,8 +136,11 @@ export function BookCodex({ bookId }: BookCodexProps) {
     <div>
       <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div className="min-w-0">
-          <p className="eyebrow mb-1">THE CODEX</p>
-          <p className="font-ui text-sm text-muted-foreground">
+          <p className="eyebrow mb-1">YOUR DISCOVERIES</p>
+          <p className="font-ui text-sm text-foreground">
+            You&apos;ve discovered {overall.met} of {overall.total}
+          </p>
+          <p className="mt-0.5 font-ui text-sm text-muted-foreground">
             {tabs
               .map(
                 (k) =>
@@ -146,7 +149,7 @@ export function BookCodex({ bookId }: BookCodexProps) {
               .join(" · ")}
           </p>
         </div>
-        <ProgressRing percent={percent} label="Overall Codex completion" />
+        <ProgressRing percent={percent} label="Discoveries completion" />
       </header>
 
       <div
@@ -215,7 +218,7 @@ function CodexSkeleton() {
   return (
     <div>
       <p role="status" className="sr-only">
-        Loading the Codex…
+        Loading your discoveries…
       </p>
       <div aria-hidden="true">
         <div className="mb-6 flex items-center justify-between gap-4">

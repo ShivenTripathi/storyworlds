@@ -13,7 +13,7 @@ interface ProgressRingProps {
 export function ProgressRing({
   percent,
   size = 56,
-  label = "Codex completion",
+  label = "Discoveries completion",
 }: ProgressRingProps) {
   const clamped = Math.max(0, Math.min(100, Math.round(percent)));
   const stroke = 5;

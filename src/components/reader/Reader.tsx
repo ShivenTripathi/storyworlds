@@ -35,6 +35,12 @@ const PROGRESS_DEBOUNCE_MS = 800;
 
 interface ReaderProps {
   bookId: string;
+  /** Optional deep-link starting chunk (0-based), from `?chunk=N` on the read
+   * route — overrides the reader's saved progress for this load only. The
+   * saved frontier is untouched either way (see `progress` route: it's
+   * clamped + never-regressing server-side), so jumping to an
+   * already-revealed earlier or later beat never spoils or resets anything. */
+  initialChunk?: number;
 }
 
 type LoadState =
@@ -42,7 +48,7 @@ type LoadState =
   | { kind: "error"; status: number; message: string }
   | { kind: "ready" };
 
-export function Reader({ bookId }: ReaderProps) {
+export function Reader({ bookId, initialChunk }: ReaderProps) {
   const [loadState, setLoadState] = useState<LoadState>({ kind: "loading" });
   const [book, setBook] = useState<BookSummary | null>(null);
   const [currentChunk, setCurrentChunk] = useState(0);
@@ -144,7 +150,15 @@ export function Reader({ bookId }: ReaderProps) {
         const { book: b, progress } = await fetchBook(bookId);
         if (cancelled) return;
         setBook(b);
-        const start = Math.max(0, progress?.currentChunk ?? 0);
+        // A deep-linked `?chunk=` (e.g. from the story insights timeline)
+        // overrides the saved position for this load only — clamped to the
+        // book's length once known. The frontier itself always comes from
+        // the server's stored progress, never from the link, so a jump
+        // backward to re-read can't regress it.
+        const requested = initialChunk ?? progress?.currentChunk ?? 0;
+        const totalChunks = b.totalChunks ?? 0;
+        const maxIdx = totalChunks > 0 ? totalChunks - 1 : requested;
+        const start = Math.min(Math.max(0, requested), Math.max(0, maxIdx));
         frontierRef.current = progress?.frontierChunk ?? start;
         latestChunkRef.current = start;
         setCurrentChunk(start);

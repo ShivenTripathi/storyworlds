@@ -340,6 +340,14 @@ export interface CodexCardRevealed {
   kind: string;
   rarity: Rarity;
   portraitUrl: string | null;
+  /**
+   * True when this entity has been met (met/known) but the illustration
+   * pipeline hasn't produced a portrait for it yet — a THIRD visual state,
+   * distinct from both 'locked' (silhouette) and a fully-revealed portrait:
+   * name/rarity are already safe to show, the art just hasn't arrived. Never
+   * inferred client-side from `portraitUrl === null` — always read this flag.
+   */
+  illustrationPending: boolean;
   slot: number;
 }
 
@@ -515,6 +523,7 @@ export async function getCodexForBook(
       kind: e.kind,
       rarity,
       portraitUrl,
+      illustrationPending: portraitUrl === null,
       slot,
     });
   });
@@ -678,6 +687,14 @@ export interface StoryInsightNode {
   kind: string;
   /** Overlays (pages), within the reader's frontier, this entity is active on. */
   pageCount: number;
+  /** First illustrated (ready) scene featuring this entity, or null when none
+   * exists yet within the frontier — the UI falls back to an initial-letter
+   * plate rather than an empty dot. */
+  portraitUrl: string | null;
+  /** Up to a few frontier-safe timeline event labels this entity is tied to
+   * (via co-occurrence on the event's page) — ties the network graph to the
+   * story's key moments without a spoiler-risk lookup of its own. */
+  keyEvents: string[];
 }
 
 export interface StoryInsightEdge {
@@ -693,6 +710,9 @@ export interface StoryInsightTimelineEntry {
   /** 1-based page, as emitted by synthesis; null only in an owner/admin full
    * view for a legacy entry that never got one. */
   approxPage: number | null;
+  /** Entities active on this event's page — already frontier-filtered (same
+   * `revealed` set as the network), so every id here is safe to link/name. */
+  entityIds: string[];
 }
 
 export interface StoryInsightsDto {
@@ -823,46 +843,65 @@ export async function getStoryInsights(
     overlayConds.push(lte(overlays.chunkIdx, frontierChunk));
   }
   const overlayRows = await db
-    .select({ activeEntityIds: overlays.activeEntityIds })
+    .select({
+      chunkIdx: overlays.chunkIdx,
+      activeEntityIds: overlays.activeEntityIds,
+      imageId: overlays.imageId,
+    })
     .from(overlays)
-    .where(and(...overlayConds));
+    .where(and(...overlayConds))
+    .orderBy(asc(overlays.chunkIdx));
 
   const pageCountByEntity = new Map<string, number>();
-  const edgeWeights = new Map<string, number>(); // key: "idA idB", idA < idB
+  const edgeWeights = new Map<string, number>(); // key: "idA idB", idA < idB
+  const firstImageByEntity = new Map<string, string>();
+  // Which revealed entities are active on a given (already-read) chunk -- lets
+  // the frontier-filtered timeline below tie an event to its cast without a
+  // second overlay scan or any new LLM-authored linkage.
+  const entityIdsByChunk = new Map<number, string[]>();
 
   for (const row of overlayRows) {
-    // Drop any id that isn't in `revealed` — a locked entity's id must never
+    // Drop any id that isn't in `revealed` -- a locked entity's id must never
     // contribute a node or an edge, even from a page at/behind the frontier.
     const ids = activeIdsOf(row).filter((id) => revealed.has(id));
+    entityIdsByChunk.set(row.chunkIdx, ids);
     for (const id of ids) {
       pageCountByEntity.set(id, (pageCountByEntity.get(id) ?? 0) + 1);
+      if (row.imageId && !firstImageByEntity.has(id)) {
+        firstImageByEntity.set(id, row.imageId);
+      }
     }
     for (let i = 0; i < ids.length; i++) {
       for (let j = i + 1; j < ids.length; j++) {
         const [a, b] = ids[i] < ids[j] ? [ids[i], ids[j]] : [ids[j], ids[i]];
-        const key = `${a} ${b}`;
+        const key = `${a} ${b}`;
         edgeWeights.set(key, (edgeWeights.get(key) ?? 0) + 1);
       }
     }
   }
 
-  const nodes: StoryInsightNode[] = [...revealed.entries()].map(
-    ([id, { name, kind }]) => ({
-      id,
-      name,
-      kind,
-      pageCount: pageCountByEntity.get(id) ?? 0,
+  // Batch portrait lookup for every distinct illustrated scene referenced --
+  // same pattern as getCodexForBook, bounded by cast size not book length.
+  const imageIds = [...new Set(firstImageByEntity.values())];
+  const imageRows = imageIds.length
+    ? await db
+        .select({ id: images.id, storageKey: images.storageKey })
+        .from(images)
+        .where(inArray(images.id, imageIds))
+    : [];
+  const portraitUrlByImageId = new Map<string, string>();
+  await Promise.all(
+    imageRows.map(async (r) => {
+      portraitUrlByImageId.set(r.id, await storage.getUrl(r.storageKey));
     }),
   );
 
   const edges: StoryInsightEdge[] = [...edgeWeights.entries()].map(
     ([key, weight]) => {
-      const [source, target] = key.split(" ");
+      const [source, target] = key.split(" ");
       return { source, target, weight };
     },
   );
-
-  const screenTime = [...nodes].sort((a, b) => b.pageCount - a.pageCount);
 
   const rawTimeline = Array.isArray(world.timeline)
     ? (world.timeline as StoryTimelineItem[])
@@ -876,12 +915,54 @@ export async function getStoryInsights(
       // risk, exactly like getWorldForReader's timeline filter.
       if (page === null || pageToChunkIdx(page) > frontierChunk) continue;
     }
+    // `entityIdsByChunk` was built from the SAME frontier-bounded, revealed-
+    // only overlay scan, so an entry's cast list can never include a locked
+    // entity even though this loop itself doesn't re-check frontier/reveal.
+    const entityIds =
+      page !== null ? (entityIdsByChunk.get(pageToChunkIdx(page)) ?? []) : [];
     timelineEntries.push({
       label: typeof item.label === "string" ? item.label : "",
       summary: typeof item.summary === "string" ? item.summary : "",
       approxPage: page,
+      entityIds,
     });
   }
+
+  // Reverse index (entity -> event labels), capped small so a node's tooltip
+  // stays a hint rather than a second timeline.
+  const MAX_KEY_EVENTS_PER_ENTITY = 3;
+  const eventLabelsByEntity = new Map<string, string[]>();
+  for (const entry of timelineEntries) {
+    if (!entry.label) continue;
+    for (const id of entry.entityIds) {
+      const list = eventLabelsByEntity.get(id) ?? [];
+      if (
+        list.length < MAX_KEY_EVENTS_PER_ENTITY &&
+        !list.includes(entry.label)
+      ) {
+        list.push(entry.label);
+        eventLabelsByEntity.set(id, list);
+      }
+    }
+  }
+
+  const nodes: StoryInsightNode[] = [...revealed.entries()].map(
+    ([id, { name, kind }]) => {
+      const imageId = firstImageByEntity.get(id);
+      return {
+        id,
+        name,
+        kind,
+        pageCount: pageCountByEntity.get(id) ?? 0,
+        portraitUrl: imageId
+          ? (portraitUrlByImageId.get(imageId) ?? null)
+          : null,
+        keyEvents: eventLabelsByEntity.get(id) ?? [],
+      };
+    },
+  );
+
+  const screenTime = [...nodes].sort((a, b) => b.pageCount - a.pageCount);
 
   return {
     status: world.status ?? "completed",

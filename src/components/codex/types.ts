@@ -29,6 +29,12 @@ export interface CodexCardRevealed {
   kind: string;
   rarity: Rarity;
   portraitUrl: string | null;
+  /**
+   * True when this entity has been discovered but the illustration pipeline
+   * hasn't produced a portrait yet — the "illustration developing" state,
+   * distinct from both 'locked' and a fully-revealed portrait.
+   */
+  illustrationPending: boolean;
   slot: number;
 }
 

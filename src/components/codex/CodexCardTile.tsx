@@ -66,10 +66,10 @@ function LockedTile() {
       </div>
       <div className="text-center">
         <p className="font-ui text-xs font-medium text-muted-foreground">
-          Undiscovered
+          Not yet discovered
         </p>
         <p className="font-ui text-[10px] text-muted-foreground italic">
-          Keep reading
+          Keep reading.
         </p>
       </div>
     </div>
@@ -86,6 +86,7 @@ function RevealedTile({
   const [loaded, setLoaded] = useState(false);
   const rarity = RARITY_STYLES[card.rarity];
   const isLegendary = card.rarity === "legendary";
+  const pending = card.illustrationPending;
 
   const body = (
     <div
@@ -118,19 +119,27 @@ function RevealedTile({
             aria-hidden="true"
             className="grid h-full w-full place-items-center"
             style={{
-              background: `linear-gradient(160deg, color-mix(in srgb, ${rarity.color} 25%, var(--world-surface)), var(--world-surface))`,
+              background: pending
+                ? `linear-gradient(160deg, color-mix(in srgb, var(--world-accent) 22%, var(--parchment-100)), var(--parchment-200))`
+                : `linear-gradient(160deg, color-mix(in srgb, ${rarity.color} 25%, var(--world-surface)), var(--world-surface))`,
             }}
           >
             <span
               className="font-display text-4xl leading-none"
-              style={{ color: rarity.color }}
+              style={{ color: pending ? "var(--world-accent)" : rarity.color }}
             >
               {initial(card.name)}
             </span>
           </div>
         )}
 
-        {isLegendary ? <HolographicSheen /> : null}
+        {/* A slow, warm shimmer sweep marks "known, but the art is still being
+            painted" — visually distinct from both the locked silhouette's
+            static hazard-stripe dimness and a fully-arrived portrait's plain
+            stillness. */}
+        {pending ? <IllustrationPendingShimmer /> : null}
+
+        {isLegendary && !pending ? <HolographicSheen /> : null}
 
         {card.state === "met" ? (
           <span
@@ -155,23 +164,53 @@ function RevealedTile({
         >
           {rarity.label}
         </span>
+        {pending ? (
+          <span
+            data-sound-hover="sparkle"
+            className="mt-1.5 flex items-center gap-1.5 font-ui text-[10px] text-muted-foreground italic"
+          >
+            <span
+              aria-hidden="true"
+              className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full motion-reduce:animate-none"
+              style={{ background: "var(--world-accent)" }}
+            />
+            Illustration developing…
+          </span>
+        ) : null}
       </div>
     </div>
   );
 
-  if (card.kind === "character") {
-    return (
-      <Link
-        href={`/books/${bookId}/characters/${encodeURIComponent(card.id)}`}
-        data-sound="bloom"
-        className="block min-h-[44px] rounded-lg focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
-      >
-        {body}
-      </Link>
-    );
-  }
+  return (
+    <Link
+      href={`/books/${bookId}/characters/${encodeURIComponent(card.id)}`}
+      data-sound="bloom"
+      className="block min-h-[44px] rounded-lg focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+    >
+      {body}
+    </Link>
+  );
+}
 
-  return body;
+/**
+ * A soft diagonal light sweep looping across the initial-letter plate while
+ * an entity's portrait is still being generated — reuses the same
+ * `animate-pulse`/`animate-spin` primitives as {@link HolographicSheen}
+ * rather than a bespoke keyframe, just tuned warmer/slower so it reads as
+ * "in progress" rather than "prized rarity".
+ */
+function IllustrationPendingShimmer() {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute -inset-1/2 animate-spin opacity-40 mix-blend-overlay motion-reduce:animate-none"
+      style={{
+        animationDuration: "4s",
+        background:
+          "conic-gradient(from 0deg, transparent 0deg, var(--parchment-100) 40deg, transparent 100deg, transparent 360deg)",
+      }}
+    />
+  );
 }
 
 /**

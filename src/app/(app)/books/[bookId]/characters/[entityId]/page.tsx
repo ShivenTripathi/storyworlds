@@ -80,9 +80,9 @@ export default function CharacterDossierPage({
         data-world-theme={themeArchetype ?? undefined}
         className="py-24 text-center"
       >
-        <p className="eyebrow mb-4">NOT YET MET</p>
+        <p className="eyebrow mb-4">NOT YET DISCOVERED</p>
         <h1 className="font-display text-2xl">
-          You haven&apos;t met this character yet.
+          You haven&apos;t discovered this yet.
         </h1>
         <Link
           href={`/books/${bookId}/read`}
