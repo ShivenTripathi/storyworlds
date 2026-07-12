@@ -558,9 +558,11 @@ export function Reader({ bookId }: ReaderProps) {
                   fontSize: `${settings.fontSize}px`,
                   lineHeight: settings.lineHeight,
                 }}
-                className={`reader-prose${
-                  settings.pageView === "spread" ? "reader-prose--spread" : ""
-                }`}
+                className={
+                  settings.pageView === "spread"
+                    ? "reader-prose reader-prose--spread"
+                    : "reader-prose"
+                }
               >
                 {blocks.map((block, i) => (
                   <ReaderBlock key={i} block={block} />
