@@ -15,6 +15,13 @@
       "when": 1783521401117,
       "tag": "0001_useful_flatman",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1783840638546,
+      "tag": "0002_cuddly_ironclad",
+      "breakpoints": true
     }
   ]
 }

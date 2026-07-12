@@ -57,6 +57,11 @@ export const books = pgTable(
       precision: 8,
       scale: 4,
     }).default("5.00"),
+    // Dedup key for auto-ingested public-domain catalog books, e.g.
+    // 'gutenberg:84'. Null for user-uploaded books.
+    catalogSource: text("catalog_source"),
+    // Short catalog description shown on the Discover tab.
+    blurb: text("blurb"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -64,7 +69,10 @@ export const books = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [index("books_owner_id_idx").on(table.ownerId)],
+  (table) => [
+    index("books_owner_id_idx").on(table.ownerId),
+    unique("books_catalog_source_unique").on(table.catalogSource),
+  ],
 );
 
 // ---------------------------------------------------------------------------
@@ -293,9 +301,7 @@ export const jobs = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [
-    index("jobs_book_id_status_idx").on(table.bookId, table.status),
-  ],
+  (table) => [index("jobs_book_id_status_idx").on(table.bookId, table.status)],
 );
 
 // ---------------------------------------------------------------------------

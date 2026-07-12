@@ -52,13 +52,15 @@ export async function createBookFromPdf({
       .returning();
 
     for (let i = 0; i < pages.length; i += CHUNK_INSERT_BATCH_SIZE) {
-      const batch = pages.slice(i, i + CHUNK_INSERT_BATCH_SIZE).map((page, j) => ({
-        bookId,
-        idx: i + j,
-        pageNumber: page.pageNum,
-        wordCount: page.wordCount,
-        text: page.text,
-      }));
+      const batch = pages
+        .slice(i, i + CHUNK_INSERT_BATCH_SIZE)
+        .map((page, j) => ({
+          bookId,
+          idx: i + j,
+          pageNumber: page.pageNum,
+          wordCount: page.wordCount,
+          text: page.text,
+        }));
       await db.insert(chunks).values(batch);
     }
 
@@ -78,6 +80,153 @@ export async function createBookFromPdf({
       .returning();
     return book;
   }
+}
+
+const CHUNK_TARGET_CHARS = 1800;
+const CHUNK_HARD_MAX_CHARS = 3000;
+
+function countWords(text: string): number {
+  const trimmed = text.trim();
+  if (!trimmed) return 0;
+  return trimmed.split(/\s+/).length;
+}
+
+/** Hard-wraps a single oversized paragraph on whitespace boundaries near `maxChars`. */
+function hardWrapParagraph(paragraph: string, maxChars: number): string[] {
+  const pieces: string[] = [];
+  let rest = paragraph;
+  while (rest.length > maxChars) {
+    let splitAt = rest.lastIndexOf(" ", maxChars);
+    if (splitAt <= 0) splitAt = maxChars;
+    pieces.push(rest.slice(0, splitAt).trim());
+    rest = rest.slice(splitAt).trim();
+  }
+  if (rest) pieces.push(rest);
+  return pieces;
+}
+
+/**
+ * Splits plain text into page-sized chunks on paragraph (blank-line)
+ * boundaries, greedily packing paragraphs up to ~CHUNK_TARGET_CHARS. A
+ * paragraph is never split unless it alone exceeds CHUNK_HARD_MAX_CHARS, in
+ * which case it's hard-wrapped on whitespace.
+ */
+export function chunkPlainText(text: string): string[] {
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+
+  const pages: string[] = [];
+  let current: string[] = [];
+  let currentLength = 0;
+
+  const flush = () => {
+    if (current.length === 0) return;
+    pages.push(current.join("\n\n"));
+    current = [];
+    currentLength = 0;
+  };
+
+  for (const paragraph of paragraphs) {
+    if (paragraph.length > CHUNK_HARD_MAX_CHARS) {
+      flush();
+      for (const piece of hardWrapParagraph(paragraph, CHUNK_HARD_MAX_CHARS)) {
+        pages.push(piece);
+      }
+      continue;
+    }
+
+    if (
+      current.length > 0 &&
+      currentLength + paragraph.length > CHUNK_TARGET_CHARS
+    ) {
+      flush();
+    }
+
+    current.push(paragraph);
+    currentLength += paragraph.length;
+  }
+
+  flush();
+
+  return pages;
+}
+
+export interface CreateBookFromTextInput {
+  ownerId: string;
+  title: string;
+  author?: string | null;
+  text: string;
+  catalogSource: string;
+  blurb?: string | null;
+  archetype?: string;
+  visibility?: "private" | "published";
+}
+
+/**
+ * Creates a book (+ chunk rows) from plain text with no source PDF — used by
+ * the Gutenberg catalog ingestion pipeline (src/services/catalog.ts). Unlike
+ * createBookFromPdf there's no storage/extraction step: the text is chunked
+ * directly into page-sized units.
+ *
+ * Idempotent on `catalogSource`: if a book with this catalogSource already
+ * exists, it's returned as-is without re-creating or re-chunking.
+ */
+export async function createBookFromText({
+  ownerId,
+  title,
+  author,
+  text,
+  catalogSource,
+  blurb,
+  archetype,
+  visibility = "private",
+}: CreateBookFromTextInput) {
+  await dbReady;
+
+  const [existing] = await db
+    .select()
+    .from(books)
+    .where(eq(books.catalogSource, catalogSource))
+    .limit(1);
+  if (existing) {
+    return existing;
+  }
+
+  const pages = chunkPlainText(text);
+  const totalWords = pages.reduce((sum, p) => sum + countWords(p), 0);
+
+  const [book] = await db
+    .insert(books)
+    .values({
+      ownerId,
+      title,
+      author: author ?? null,
+      status: "ready",
+      totalChunks: pages.length,
+      totalWords,
+      visibility,
+      themeArchetype: archetype ?? undefined,
+      catalogSource,
+      blurb: blurb ?? null,
+    })
+    .returning();
+
+  for (let i = 0; i < pages.length; i += CHUNK_INSERT_BATCH_SIZE) {
+    const batch = pages
+      .slice(i, i + CHUNK_INSERT_BATCH_SIZE)
+      .map((pageText, j) => ({
+        bookId: book.id,
+        idx: i + j,
+        pageNumber: i + j + 1,
+        wordCount: countWords(pageText),
+        text: pageText,
+      }));
+    await db.insert(chunks).values(batch);
+  }
+
+  return book;
 }
 
 export interface BookDto {
@@ -255,7 +404,11 @@ export async function listPublished() {
 export async function addToLibrary(userId: string, bookId: string) {
   await dbReady;
 
-  const [book] = await db.select().from(books).where(eq(books.id, bookId)).limit(1);
+  const [book] = await db
+    .select()
+    .from(books)
+    .where(eq(books.id, bookId))
+    .limit(1);
   if (!book) {
     throw new ApiError(404, "not_found", "Book not found.");
   }
@@ -273,7 +426,11 @@ export async function addToLibrary(userId: string, bookId: string) {
 
 export async function getBook(bookId: string) {
   await dbReady;
-  const [book] = await db.select().from(books).where(eq(books.id, bookId)).limit(1);
+  const [book] = await db
+    .select()
+    .from(books)
+    .where(eq(books.id, bookId))
+    .limit(1);
   return book;
 }
 
@@ -283,7 +440,10 @@ export async function getProgress(userId: string, bookId: string) {
     .select()
     .from(readingProgress)
     .where(
-      and(eq(readingProgress.userId, userId), eq(readingProgress.bookId, bookId)),
+      and(
+        eq(readingProgress.userId, userId),
+        eq(readingProgress.bookId, bookId),
+      ),
     )
     .limit(1);
   return row;
