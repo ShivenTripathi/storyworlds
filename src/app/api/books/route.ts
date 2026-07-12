@@ -4,10 +4,15 @@ import { dbReady } from "@/db";
 import { requireUser } from "@/lib/auth";
 import { ApiError, handleApiError } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
-import { createBookFromPdf, listBooks, toBookDto } from "@/services/books";
+import {
+  createBookFromUpload,
+  detectBookFormat,
+  listBooks,
+  toBookDto,
+} from "@/services/books";
 import { checkEntitlement } from "@/services/entitlements";
 
-const MAX_PDF_BYTES = 50 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 
 const metaSchema = z.object({
   title: z.string().trim().min(1).max(300).optional(),
@@ -31,14 +36,25 @@ export async function POST(req: NextRequest) {
     if (!(file instanceof File)) {
       throw new ApiError(400, "invalid_request", "Missing 'file' field.");
     }
-    if (file.type && file.type !== "application/pdf") {
-      throw new ApiError(400, "invalid_request", "File must be a PDF.");
-    }
     if (file.size === 0) {
       throw new ApiError(400, "invalid_request", "File is empty.");
     }
-    if (file.size > MAX_PDF_BYTES) {
+    if (file.size > MAX_UPLOAD_BYTES) {
       throw new ApiError(400, "invalid_request", "File exceeds 50MB limit.");
+    }
+
+    const buffer = new Uint8Array(await file.arrayBuffer());
+
+    // Format is resolved from the extension + verified against the file's
+    // actual magic bytes/content — never the client-supplied MIME type
+    // alone (that's easy to spoof from a <input accept> bypass or a raw
+    // multipart request). Fail fast, before any DB/entitlement work.
+    if (!detectBookFormat(file.name, buffer)) {
+      throw new ApiError(
+        400,
+        "invalid_request",
+        "Unsupported or unrecognized file — upload a PDF, EPUB, or plain-text (.txt) file.",
+      );
     }
 
     const parsed = metaSchema.safeParse({
@@ -81,17 +97,12 @@ export async function POST(req: NextRequest) {
     // private/premium uploads (see src/services/entitlements.ts).
     await checkEntitlement(userId, "upload", { pricingTier });
 
-    const defaultTitle = file.name.replace(/\.pdf$/i, "");
-    const title = parsed.data.title ?? defaultTitle ?? "Untitled";
-    const author = parsed.data.author ?? null;
-
-    const buffer = new Uint8Array(await file.arrayBuffer());
-
-    const book = await createBookFromPdf({
+    const book = await createBookFromUpload({
       ownerId: userId,
-      title,
-      author,
+      filename: file.name,
       data: buffer,
+      title: parsed.data.title ?? null,
+      author: parsed.data.author ?? null,
       visibility,
       pricingTier,
       rightsAttestation: parsed.data.rightsAttestation ?? null,

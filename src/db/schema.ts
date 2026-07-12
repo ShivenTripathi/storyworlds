@@ -43,7 +43,11 @@ export const books = pgTable(
     ownerId: text("owner_id").references(() => users.id),
     title: text("title").notNull(),
     author: text("author"),
-    sourceKey: text("source_key"), // storage key of original PDF
+    sourceKey: text("source_key"), // storage key of the original uploaded file
+    // Format of the original uploaded/ingested source: 'pdf' | 'epub' |
+    // 'txt'. Null for pre-existing rows and books with no stored source
+    // (e.g. catalog books created via createBookFromText).
+    sourceFormat: text("source_format"),
     status: text("status").notNull().default("uploaded"),
     // 'uploaded' | 'extracting' | 'analyzing' | 'ready' | 'failed'
     totalChunks: integer("total_chunks"),

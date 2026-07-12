@@ -4,6 +4,12 @@ import { useRef, useState, type DragEvent } from "react";
 import type { Book, ApiErrorBody } from "./types";
 
 const MAX_BYTES = 50 * 1024 * 1024;
+const ACCEPTED_EXTENSIONS = [".pdf", ".epub", ".txt"];
+const ACCEPTED_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/epub+zip",
+  "text/plain",
+]);
 
 interface UploadBookProps {
   onUploaded: (book: Book) => void;
@@ -72,15 +78,16 @@ function UploadDialog({
 
   function validateAndSetFile(candidate: File | undefined | null) {
     if (!candidate) return;
-    if (
-      candidate.type !== "application/pdf" &&
-      !candidate.name.toLowerCase().endsWith(".pdf")
-    ) {
-      setError("Only PDF files are supported.");
+    const name = candidate.name.toLowerCase();
+    const hasAcceptedExtension = ACCEPTED_EXTENSIONS.some((ext) =>
+      name.endsWith(ext),
+    );
+    if (!hasAcceptedExtension && !ACCEPTED_MIME_TYPES.has(candidate.type)) {
+      setError("Only PDF, EPUB, or plain-text (.txt) files are supported.");
       return;
     }
     if (candidate.size > MAX_BYTES) {
-      setError("File is too large — the shelf accepts PDFs up to 50MB.");
+      setError("File is too large — the shelf accepts files up to 50MB.");
       return;
     }
     setError(null);
@@ -95,7 +102,7 @@ function UploadDialog({
 
   async function handleUpload() {
     if (!file) {
-      setError("Choose a PDF to upload.");
+      setError("Choose a PDF, EPUB, or text file to upload.");
       return;
     }
     if (contribution === "published" && !attestation) {
@@ -166,7 +173,7 @@ function UploadDialog({
         <div
           role="button"
           tabIndex={0}
-          aria-label="Choose a PDF, or drag one here"
+          aria-label="Choose a PDF, EPUB, or text file, or drag one here"
           onDragOver={(e) => {
             e.preventDefault();
             setDragActive(true);
@@ -189,7 +196,7 @@ function UploadDialog({
           <input
             ref={inputRef}
             type="file"
-            accept=".pdf,application/pdf"
+            accept=".pdf,.epub,.txt,application/pdf,application/epub+zip,text/plain"
             className="hidden"
             onChange={(e) => validateAndSetFile(e.target.files?.[0])}
           />
@@ -197,7 +204,9 @@ function UploadDialog({
             <span className="text-foreground">{file.name}</span>
           ) : (
             <>
-              <span>Drag a PDF here, or click to choose one</span>
+              <span>
+                Drag a PDF, EPUB, or text file here, or click to choose one
+              </span>
               <span className="text-xs opacity-70">Up to 50MB</span>
             </>
           )}
@@ -212,7 +221,7 @@ function UploadDialog({
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="Leave blank to use the PDF's title"
+              placeholder="Leave blank to use the book's title"
               className="w-full rounded-md border border-input bg-background px-3 py-2 font-ui text-sm text-foreground outline-none focus:border-[var(--ring)]"
             />
           </label>

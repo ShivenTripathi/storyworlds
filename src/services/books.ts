@@ -3,10 +3,109 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, chunks, purchases, readingProgress } from "@/db/schema";
 import { ApiError } from "@/lib/errors";
-import { extractPdf } from "@/services/pdf";
+import { extractEpubText } from "@/services/epub";
+import { extractPdf, type PdfPage } from "@/services/pdf";
 import { storage } from "@/services/storage";
 
 const CHUNK_INSERT_BATCH_SIZE = 100;
+
+// ---------------------------------------------------------------------------
+// Upload format detection
+//
+// Format is a detail of extraction, not a parallel code path: the upload
+// route and createBookFromUpload both resolve a file to one of these three
+// via detectBookFormat before anything else happens. Never trust the
+// client-supplied MIME type alone — it's sniffed against magic bytes too.
+// ---------------------------------------------------------------------------
+
+export type BookSourceFormat = "pdf" | "epub" | "txt";
+
+const EXTENSION_FORMAT: Record<string, BookSourceFormat> = {
+  ".pdf": "pdf",
+  ".epub": "epub",
+  ".txt": "txt",
+};
+
+export const ACCEPTED_UPLOAD_EXTENSIONS = Object.keys(EXTENSION_FORMAT);
+
+function extensionOf(filename: string): string {
+  const idx = filename.lastIndexOf(".");
+  return idx === -1 ? "" : filename.slice(idx).toLowerCase();
+}
+
+/** True if `bytes` starts with the given byte sequence. */
+function startsWith(bytes: Uint8Array, sig: number[]): boolean {
+  if (bytes.length < sig.length) return false;
+  for (let i = 0; i < sig.length; i++) {
+    if (bytes[i] !== sig[i]) return false;
+  }
+  return true;
+}
+
+const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46]; // "%PDF"
+const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]; // "PK\x03\x04"
+
+/**
+ * Sniffs whether `data` looks like a well-formed EPUB zip: PK local-file-
+ * header magic, and the near-mandatory first "mimetype" entry (stored
+ * uncompressed, immediately after its header) spelling out
+ * "application/epub+zip". This catches a renamed/spoofed non-EPUB zip
+ * (e.g. a .docx) without paying for a full unzip.
+ */
+function looksLikeEpub(data: Uint8Array): boolean {
+  if (!startsWith(data, ZIP_MAGIC)) return false;
+  const head = new TextDecoder("latin1").decode(data.subarray(0, 256));
+  return head.includes("mimetype") && head.includes("application/epub+zip");
+}
+
+/**
+ * True if `data` looks like a decodable, non-binary text file: valid UTF-8
+ * and no embedded NUL bytes in a reasonably-sized prefix (a strong signal
+ * of a binary format masquerading as .txt).
+ */
+function looksLikePlainText(data: Uint8Array): boolean {
+  const prefix = data.subarray(0, 8000);
+  if (prefix.includes(0)) return false;
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(prefix);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolves an uploaded file to a supported format by extension, then
+ * verifies the claim against the file's actual magic bytes/content — never
+ * trusts extension or client MIME type alone. Returns null (reject) for
+ * unsupported extensions or a mismatch (e.g. a renamed non-PDF claiming
+ * `.pdf`).
+ */
+export function detectBookFormat(
+  filename: string,
+  data: Uint8Array,
+): BookSourceFormat | null {
+  const format = EXTENSION_FORMAT[extensionOf(filename)];
+  if (!format) return null;
+
+  if (format === "pdf" && !startsWith(data, PDF_MAGIC)) return null;
+  if (format === "epub" && !looksLikeEpub(data)) return null;
+  if (format === "txt" && !looksLikePlainText(data)) return null;
+
+  return format;
+}
+
+/** Decodes an uploaded .txt file as UTF-8, stripping a leading BOM. */
+function decodeTextFile(data: Uint8Array): string {
+  const text = new TextDecoder("utf-8").decode(data);
+  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+}
+
+/** Strips a known upload extension for a filename-derived default title. */
+function titleFromFilename(filename: string): string {
+  const ext = extensionOf(filename);
+  return ext ? filename.slice(0, -ext.length) : filename;
+}
 
 /**
  * Visibility/monetization model (see CLAUDE.md "THE MODEL"):
@@ -21,11 +120,15 @@ export type PricingTier = "public_subsidized" | "private_premium" | "catalog";
 
 export type RightsAttestation = "public_domain" | "owned_contributed";
 
-export interface CreateBookFromPdfInput {
+export interface CreateBookFromUploadInput {
   ownerId: string;
-  title: string;
-  author?: string | null;
+  /** Original uploaded filename — drives format detection + default title. */
+  filename: string;
   data: Uint8Array;
+  /** User-supplied title; falls back to EPUB metadata, then the filename. */
+  title?: string | null;
+  /** User-supplied author; falls back to EPUB metadata (dc:creator). */
+  author?: string | null;
   /** Defaults to 'private' / 'private_premium' — see PricingTier above. */
   visibility?: "private" | "published";
   pricingTier?: PricingTier;
@@ -34,49 +137,107 @@ export interface CreateBookFromPdfInput {
   contributedByUserId?: string | null;
 }
 
+const SOURCE_CONTENT_TYPE: Record<BookSourceFormat, string> = {
+  pdf: "application/pdf",
+  epub: "application/epub+zip",
+  txt: "text/plain; charset=utf-8",
+};
+
 /**
- * Stores the source PDF, extracts per-page text, and creates the book +
- * chunk rows. One PDF page = one chunk (0-based idx), including blank
- * pages, so chunk idx and page number stay aligned.
+ * Unified book-creation entry point: detects the upload's format (pdf /
+ * epub / txt), extracts it to page-sized chunks, stores the original source
+ * blob, and creates the book + chunk rows. Format is a detail of extraction,
+ * not a parallel code path — PDF pages become chunks 1:1 (via
+ * src/services/pdf.ts), while EPUB (src/services/epub.ts) and plain text
+ * are concatenated/normalized to plain text and split with
+ * `chunkPlainText`.
  *
- * If extraction fails, the book row is still created but marked 'failed'.
+ * Throws `ApiError(400)` up-front for an unrecognized/spoofed file (caller
+ * should validate before this in the common case, but this is the single
+ * source of truth for "is this file supported"). If extraction of an
+ * otherwise-valid file fails, the book row is still created but marked
+ * 'failed' — mirroring the previous PDF-only behavior.
  */
-export async function createBookFromPdf({
+export async function createBookFromUpload({
   ownerId,
+  filename,
+  data,
   title,
   author,
-  data,
   visibility = "private",
   pricingTier = visibility === "published"
     ? "public_subsidized"
     : "private_premium",
   rightsAttestation = null,
   contributedByUserId = null,
-}: CreateBookFromPdfInput) {
+}: CreateBookFromUploadInput) {
   await dbReady;
 
+  const format = detectBookFormat(filename, data);
+  if (!format) {
+    throw new ApiError(
+      400,
+      "invalid_request",
+      "Unsupported or unrecognized file — upload a PDF, EPUB, or plain-text (.txt) file.",
+    );
+  }
+
   const bookId = randomUUID();
-  const sourceKey = `books/${bookId}/source.pdf`;
-  await storage.put(sourceKey, data, "application/pdf");
+  const sourceKey = `books/${bookId}/source.${format}`;
+  await storage.put(sourceKey, data, SOURCE_CONTENT_TYPE[format]);
+
+  let resolvedTitle = title?.trim() || null;
+  let resolvedAuthor = author?.trim() || null;
+
+  const baseRow = {
+    id: bookId,
+    ownerId,
+    sourceKey,
+    sourceFormat: format,
+    visibility,
+    pricingTier,
+    rightsAttestation,
+    contributedByUserId,
+  };
 
   try {
-    const { pages, totalWords } = await extractPdf(data);
+    let pages: PdfPage[];
+    let totalWords: number;
+
+    if (format === "pdf") {
+      const extracted = await extractPdf(data);
+      pages = extracted.pages;
+      totalWords = extracted.totalWords;
+    } else {
+      let text: string;
+      if (format === "epub") {
+        const extracted = await extractEpubText(data);
+        text = extracted.text;
+        resolvedTitle = resolvedTitle ?? extracted.title;
+        resolvedAuthor = resolvedAuthor ?? extracted.author;
+      } else {
+        text = decodeTextFile(data);
+      }
+      const plainPages = chunkPlainText(text);
+      pages = plainPages.map((pageText, i) => ({
+        pageNum: i + 1,
+        text: pageText,
+        wordCount: countWords(pageText),
+      }));
+      totalWords = pages.reduce((sum, p) => sum + p.wordCount, 0);
+    }
+
+    resolvedTitle = resolvedTitle ?? titleFromFilename(filename) ?? "Untitled";
 
     const [book] = await db
       .insert(books)
       .values({
-        id: bookId,
-        ownerId,
-        title,
-        author: author ?? null,
-        sourceKey,
+        ...baseRow,
+        title: resolvedTitle,
+        author: resolvedAuthor,
         status: "ready",
         totalChunks: pages.length,
         totalWords,
-        visibility,
-        pricingTier,
-        rightsAttestation,
-        contributedByUserId,
       })
       .returning();
 
@@ -95,20 +256,14 @@ export async function createBookFromPdf({
 
     return book;
   } catch (err) {
-    console.error(`[books] extraction failed for ${bookId}:`, err);
+    console.error(`[books] extraction failed for ${bookId} (${format}):`, err);
     const [book] = await db
       .insert(books)
       .values({
-        id: bookId,
-        ownerId,
-        title,
-        author: author ?? null,
-        sourceKey,
+        ...baseRow,
+        title: resolvedTitle ?? titleFromFilename(filename) ?? "Untitled",
+        author: resolvedAuthor,
         status: "failed",
-        visibility,
-        pricingTier,
-        rightsAttestation,
-        contributedByUserId,
       })
       .returning();
     return book;
@@ -201,10 +356,10 @@ export interface CreateBookFromTextInput {
 }
 
 /**
- * Creates a book (+ chunk rows) from plain text with no source PDF — used by
- * the Gutenberg catalog ingestion pipeline (src/services/catalog.ts). Unlike
- * createBookFromPdf there's no storage/extraction step: the text is chunked
- * directly into page-sized units.
+ * Creates a book (+ chunk rows) from plain text with no stored source file —
+ * used by the Gutenberg catalog ingestion pipeline (src/services/catalog.ts).
+ * Unlike createBookFromUpload there's no storage/extraction step: the text
+ * is chunked directly into page-sized units.
  *
  * Idempotent on `catalogSource`: if a book with this catalogSource already
  * exists, it's returned as-is without re-creating or re-chunking.
@@ -281,6 +436,8 @@ export interface BookDto {
   themeArchetype?: string | null;
   /** 'public_subsidized' | 'private_premium' | 'catalog' | null (legacy rows) — see PricingTier. */
   pricingTier?: string | null;
+  /** 'pdf' | 'epub' | 'txt' | null (catalog books / legacy rows with no stored source). */
+  sourceFormat?: string | null;
   /** Set by listBooks: whether this book is on the shelf because the caller
    * owns it or because they've added a published book to their library. */
   source?: "owned" | "library";
@@ -305,6 +462,7 @@ export function toBookDto(
     visibility?: string | null;
     themeArchetype?: string | null;
     pricingTier?: string | null;
+    sourceFormat?: string | null;
   },
   progress?: {
     currentChunk: number | null;
@@ -324,6 +482,7 @@ export function toBookDto(
     visibility: book.visibility ?? null,
     themeArchetype: book.themeArchetype ?? null,
     pricingTier: book.pricingTier ?? null,
+    sourceFormat: book.sourceFormat ?? null,
   };
 
   if (source) {
