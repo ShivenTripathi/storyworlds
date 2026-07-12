@@ -31,9 +31,12 @@ export type Block =
 
 const ILLUSTRATION_RE = /^\[illustrations?:?\s*(.*?)\]$/i;
 // A chapter/section marker: "CHAPTER I", "CHAPTER ONE", "CONTENTS", "PROLOGUE",
-// a bare roman numeral, or a titled roman-numeral heading.
+// a bare roman numeral, or a titled roman-numeral heading ("IV. The Sign").
+// The titled form REQUIRES the period after the numeral — without it, every
+// first-person sentence ("I am in here.", "I have committed…") would match,
+// since "I" is itself a valid roman numeral.
 const HEADING_RE =
-  /^(chapter\b.*|part\b.*|book\b.*|prologue|epilogue|contents|[ivxlcdm]{1,7}\.?|[ivxlcdm]{1,7}\s+.{0,60})$/i;
+  /^(chapter\b.*|part\b.*|book\b.*|prologue|epilogue|contents|[ivxlcdm]{1,7}\.?|[ivxlcdm]{1,7}\.\s+.{0,60})$/i;
 // A bare section number on its own line ("I.", "IV.") — styled quieter than a
 // full chapter title so it doesn't compete with it.
 const SECTION_RE = /^[ivxlcdm]{1,7}\.?$/i;
@@ -86,8 +89,81 @@ function isHeading(text: string): boolean {
   return HEADING_RE.test(text.trim());
 }
 
+/**
+ * Appends a soft-wrapped line to the current paragraph, healing a word broken
+ * across the wrap. PDF/OCR extraction keeps the typesetter's line-break
+ * hyphen ("inter-\nview"): if the continuation is lowercase the hyphen split
+ * one word (drop it → "interview"); if it's capitalised it's a real compound
+ * that happened to wrap ("half-\nWindsors" → "half-Windsors", hyphen kept).
+ */
+function appendWrapped(cur: string, line: string): string {
+  if (!cur) return line;
+  if (/\p{L}-$/u.test(cur)) {
+    const next = line[0] ?? "";
+    if (/\p{Ll}/u.test(next)) return cur.slice(0, -1) + line;
+    return cur + line;
+  }
+  return cur + " " + line;
+}
+
+// A line of dot leaders ending in a page number — a table-of-contents row
+// ("YEAR OF GLAD ........ 6"). Always its own line, never joined to the next.
+const DOT_LEADER_RE = /\.{4,}\s*\d*\s*$/;
+
+/**
+ * Reflows raw extracted prose into clean paragraphs. PDF/OCR extraction emits
+ * one line per *visual* line and frequently no blank line between paragraphs,
+ * so naive rendering yields a run-on wall of text with mid-word hyphens and
+ * headings glued onto the next sentence ("YEAR OF GLAD\nI am seated…").
+ *
+ * For each block of single-newline lines it joins soft wraps with a space,
+ * de-hyphenates broken words, and infers a paragraph break wherever a line
+ * stops well short of the column width — the tell-tale of a paragraph's last
+ * line. Blank-line paragraph breaks already in the text (e.g. Project
+ * Gutenberg) are preserved, so this is safe and idempotent on clean input.
+ */
+export function reflowProse(text: string): string {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .split(/\n[ \t]*\n+/)
+    .map(reflowBlock)
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+function reflowBlock(block: string): string {
+  const lines = block
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length <= 1) return lines.join("");
+
+  // Estimate the column width from the 90th-percentile line length; a line far
+  // shorter than that didn't fill the column, so it ended a paragraph.
+  const sorted = lines.map((l) => l.length).sort((a, b) => a - b);
+  const full = sorted[Math.floor((sorted.length - 1) * 0.9)];
+  const shortThreshold = full * 0.72;
+
+  const paras: string[] = [];
+  let cur = "";
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    cur = appendWrapped(cur, line);
+    const endsParagraph =
+      i === lines.length - 1 ||
+      line.length < shortThreshold ||
+      DOT_LEADER_RE.test(line);
+    if (endsParagraph) {
+      paras.push(cur);
+      cur = "";
+    }
+  }
+  if (cur) paras.push(cur);
+  return paras.join("\n\n");
+}
+
 export function formatChunk(text: string): Block[] {
-  const paragraphs = text
+  const paragraphs = reflowProse(text)
     .split(/\n{2,}/)
     .map((p) => p.replace(/\s+\n/g, "\n").trim())
     .filter(Boolean);

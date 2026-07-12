@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { formatChunk, splitDropCap } from "@/domain/reader-format";
+import { formatChunk, reflowProse, splitDropCap } from "@/domain/reader-format";
+
+function paraText(block: ReturnType<typeof formatChunk>[number]): string {
+  if (block.kind !== "para")
+    throw new Error("expected para, got " + block.kind);
+  return block.runs.map((r) => r.text).join("");
+}
 
 describe("formatChunk", () => {
   it("renders _italic_ spans as italic runs", () => {
@@ -74,6 +80,58 @@ describe("formatChunk", () => {
     // A bare section number does not open a chapter, so no drop cap.
     expect(blocks[1]).toMatchObject({ kind: "para" });
     expect((blocks[1] as { dropCap?: boolean }).dropCap).toBeUndefined();
+  });
+});
+
+describe("reflowProse — messy PDF/OCR extraction", () => {
+  // One line per visual line, no blank lines between paragraphs, plus a broken
+  // word at the wrap — exactly what a PDF text layer produces.
+  const raw =
+    "YEAR OF GLAD\n" +
+    "I am seated in an office, surrounded by heads and bodies. My posture is\n" +
+    "consciously congruent to the shape of my hard chair, insulated from the\n" +
+    "reception area outside.\n" +
+    "I am in here.\n" +
+    "Three faces have resolved above summer-weight sportcoats and half-\n" +
+    "Windsors across a polished pine conference table under an Arizona noon.";
+
+  it("de-hyphenates a compound wrapped at its hyphen (keeps the hyphen)", () => {
+    expect(reflowProse(raw)).toContain("half-Windsors");
+    expect(reflowProse(raw)).not.toContain("half- ");
+  });
+
+  it("de-hyphenates a single word split across a line break (drops the hyphen)", () => {
+    expect(reflowProse("the inter-\nview room was cold")).toBe(
+      "the interview room was cold",
+    );
+  });
+
+  it("infers paragraph breaks where a line stops short of the column", () => {
+    const blocks = formatChunk(raw);
+    // The short lines become their own paragraphs; long lines are joined.
+    expect(paraText(blocks[1])).toContain(
+      "My posture is consciously congruent",
+    );
+    expect(
+      blocks.some((b) => b.kind === "para" && paraText(b) === "I am in here."),
+    ).toBe(true);
+  });
+
+  it("lifts an inline ALL-CAPS section title out of the run-on paragraph", () => {
+    const blocks = formatChunk(raw);
+    expect(blocks[0]).toMatchObject({ kind: "display", text: "YEAR OF GLAD" });
+  });
+
+  it("does not mistake a first-person sentence for a roman-numeral heading", () => {
+    const blocks = formatChunk("I am in here.\n\nThe day was long.");
+    expect(blocks[0].kind).toBe("para");
+    expect(paraText(blocks[0])).toBe("I am in here.");
+  });
+
+  it("preserves existing blank-line paragraphs and is idempotent on clean text", () => {
+    const clean = "First paragraph here.\n\nSecond paragraph here.";
+    expect(reflowProse(clean)).toBe(clean);
+    expect(reflowProse(reflowProse(raw))).toBe(reflowProse(raw));
   });
 });
 
