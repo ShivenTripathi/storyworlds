@@ -5,6 +5,7 @@ import { inngest } from "@/jobs/client";
 import { generateOverlayPrefetch } from "@/jobs/generate-overlay";
 import { sweepAnalysis } from "@/jobs/sweep-analysis";
 import { sweepCovers } from "@/jobs/sweep-covers";
+import { sweepFunFacts } from "@/jobs/sweep-funfacts";
 import { sweepOverlays } from "@/jobs/sweep-overlays";
 
 export const { GET, POST, PUT } = serve({
@@ -16,5 +17,6 @@ export const { GET, POST, PUT } = serve({
     sweepAnalysis,
     sweepOverlays,
     sweepCovers,
+    sweepFunFacts,
   ],
 });

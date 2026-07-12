@@ -1,7 +1,11 @@
 import { and, isNull, ne, or, eq, inArray } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, jobs, worldReferences } from "@/db/schema";
-import { getFreeTierHeadroom, isHeadroomTooLow } from "@/services/queue";
+import {
+  getFreeTierHeadroom,
+  isHeadroomTooLow,
+  isReaderActive,
+} from "@/services/queue";
 import {
   selectNextBookForAnalysis,
   type AnalysisCandidateInput,
@@ -29,6 +33,7 @@ const MAX_ANALYSIS_ATTEMPTS = 3;
 
 export type SweepAnalysisResult =
   | { skipped: "low_headroom"; headroomPct: number }
+  | { skipped: "readers_active" }
   | { skipped: "none_eligible"; needsManualRetry: string[] }
   | { enqueued: string; jobId: string };
 
@@ -114,6 +119,10 @@ async function loadAnalysisCandidates(): Promise<AnalysisCandidateInput[]> {
  */
 export async function sweepAnalysisOnce(): Promise<SweepAnalysisResult> {
   await dbReady;
+
+  if (await isReaderActive()) {
+    return { skipped: "readers_active" };
+  }
 
   const headroom = await getFreeTierHeadroom();
   if (isHeadroomTooLow(headroom)) {

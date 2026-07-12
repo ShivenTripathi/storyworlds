@@ -8,7 +8,7 @@ import { ARCHETYPES } from "@/theme/archetypes";
  */
 
 export interface MockDriverRunOpts {
-  operation: "segment" | "synthesis" | "chat" | "overlay";
+  operation: "segment" | "synthesis" | "chat" | "overlay" | "funfacts";
   model: string;
   system: string;
   prompt: string;
@@ -132,6 +132,8 @@ function buildMockOutput(
       return buildMockSynthesis(prompt);
     case "overlay":
       return buildMockOverlay(prompt);
+    case "funfacts":
+      return buildMockFunFacts(prompt);
     default:
       return { text: "Mock response." };
   }
@@ -241,6 +243,45 @@ function buildMockSynthesis(prompt: string) {
     ],
     unknowns: [
       { question: "An open question raised by the book.", kind: "mystery" },
+    ],
+  };
+}
+
+/** Pull the title/author out of the prompt built by buildFunFactsPrompt. */
+function extractFunFactsSubject(prompt: string): {
+  title: string;
+  author: string | null;
+} {
+  const titleMatch = prompt.match(/^Book: "([^"]*)"/);
+  const authorMatch = prompt.match(/\nAuthor: (.+)/);
+  return {
+    title: titleMatch ? titleMatch[1] : "this book",
+    author: authorMatch ? authorMatch[1].trim() : null,
+  };
+}
+
+function buildMockFunFacts(prompt: string) {
+  const { title, author } = extractFunFactsSubject(prompt);
+  const byline = author ? ` by ${author}` : "";
+
+  return {
+    facts: [
+      {
+        text: `"${title}"${byline} was written during a period that shaped its voice and concerns (mock fact).`,
+        category: "author" as const,
+      },
+      {
+        text: `Its first publication met the tastes and anxieties of its own era before finding a wider readership (mock fact).`,
+        category: "history" as const,
+      },
+      {
+        text: `A small, curious detail about its writing or naming has stuck with readers ever since (mock fact).`,
+        category: "trivia" as const,
+      },
+      {
+        text: `It has gone on to influence later writers and remains widely read today (mock fact).`,
+        category: "legacy" as const,
+      },
     ],
   };
 }

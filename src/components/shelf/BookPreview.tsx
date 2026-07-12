@@ -99,6 +99,15 @@ export function BookPreview({
             </p>
           )}
 
+          {book.funFacts && book.funFacts.facts.length > 0 ? (
+            <p className="mt-3 rounded-md border border-border bg-muted/40 px-3 py-2 font-ui text-xs leading-relaxed text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Did you know?{" "}
+              </span>
+              {book.funFacts.facts[0].text}
+            </p>
+          ) : null}
+
           <p className="mt-3 font-ui text-xs text-muted-foreground">
             {book.totalWords.toLocaleString()} words ·{" "}
             {book.totalChunks.toLocaleString()} pages

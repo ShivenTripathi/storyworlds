@@ -119,49 +119,54 @@ function tone(o: ToneOpts): void {
   osc.stop(t0 + o.dur + 0.02);
 }
 
-// C-major-ish frequencies used across the warmer cues.
-const C5 = 523.25,
-  E5 = 659.25,
-  G5 = 783.99,
-  C6 = 1046.5;
+// One consonant pitch family (C-major pentatonic) so every cue belongs to the
+// SAME soft instrument — the interface has a single quiet voice, not a
+// grab-bag of unrelated beeps. Every recipe below uses the default sine
+// timbre and the same short envelope; only pitch (and how many notes) varies,
+// which is what makes the whole set feel uniform.
+const N = {
+  G4: 392.0,
+  C5: 523.25,
+  D5: 587.33,
+  E5: 659.25,
+  G5: 783.99,
+  A5: 880.0,
+  C6: 1046.5,
+};
 
 const RECIPES: Record<Cue, () => void> = {
-  tick: () => tone({ freq: 2100, dur: 0.03, type: "triangle", gain: 0.4 }),
-  press: () =>
-    tone({ freq: 300, dur: 0.06, type: "sine", gain: 0.7, glideTo: 260 }),
-  release: () => tone({ freq: 460, dur: 0.05, type: "sine", gain: 0.45 }),
+  // Light single notes for the frequent, incidental cues.
+  tick: () => tone({ freq: N.C6, dur: 0.045, gain: 0.3 }),
+  press: () => tone({ freq: N.G4, dur: 0.06, gain: 0.5 }),
+  release: () => tone({ freq: N.C5, dur: 0.05, gain: 0.34 }),
+  // Two-note gestures: rising = on, falling = off (same two pitches).
   toggleOn: () => {
-    tone({ freq: 440, dur: 0.05, gain: 0.5 });
-    tone({ freq: 660, dur: 0.07, gain: 0.5, delay: 0.05 });
+    tone({ freq: N.G4, dur: 0.055, gain: 0.42 });
+    tone({ freq: N.C5, dur: 0.07, gain: 0.42, delay: 0.055 });
   },
   toggleOff: () => {
-    tone({ freq: 520, dur: 0.05, gain: 0.5 });
-    tone({ freq: 340, dur: 0.07, gain: 0.5, delay: 0.05 });
+    tone({ freq: N.C5, dur: 0.055, gain: 0.42 });
+    tone({ freq: N.G4, dur: 0.07, gain: 0.42, delay: 0.055 });
   },
+  // Ascending pentatonic runs of increasing weight for the "reveal" moments.
   sparkle: () => {
-    [1320, 1760, 2200].forEach((f, i) =>
-      tone({
-        freq: f,
-        dur: 0.07,
-        type: "triangle",
-        gain: 0.28,
-        delay: i * 0.035,
-      }),
+    [N.G5, N.A5, N.C6].forEach((f, i) =>
+      tone({ freq: f, dur: 0.06, gain: 0.24, delay: i * 0.045 }),
     );
   },
   bloom: () => {
-    [C5, E5, G5].forEach((f, i) =>
-      tone({ freq: f, dur: 0.24, type: "sine", gain: 0.4, delay: i * 0.045 }),
+    [N.C5, N.G5].forEach((f, i) =>
+      tone({ freq: f, dur: 0.18, gain: 0.34, delay: i * 0.05 }),
     );
   },
   chime: () => {
-    [E5, G5, C6].forEach((f, i) =>
-      tone({ freq: f, dur: 0.34, type: "sine", gain: 0.32, delay: i * 0.06 }),
+    [N.E5, N.G5, N.C6].forEach((f, i) =>
+      tone({ freq: f, dur: 0.2, gain: 0.28, delay: i * 0.06 }),
     );
   },
   success: () => {
-    [C5, E5, G5, C6].forEach((f, i) =>
-      tone({ freq: f, dur: 0.3, type: "sine", gain: 0.34, delay: i * 0.07 }),
+    [N.C5, N.E5, N.G5, N.C6].forEach((f, i) =>
+      tone({ freq: f, dur: 0.18, gain: 0.3, delay: i * 0.06 }),
     );
   },
 };

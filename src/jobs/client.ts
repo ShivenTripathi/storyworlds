@@ -51,3 +51,12 @@ export interface CoverSweepRequestedEvent {
   name: "cover/sweep.requested";
   data: Record<string, never>;
 }
+
+/**
+ * Manual trigger for the always-on "fun facts" backfill sweeper
+ * (src/jobs/sweep-funfacts.ts) — see AnalysisSweepRequestedEvent above.
+ */
+export interface FunFactsSweepRequestedEvent {
+  name: "funfacts/sweep.requested";
+  data: Record<string, never>;
+}

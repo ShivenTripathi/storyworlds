@@ -149,3 +149,39 @@ export const OverlaySchema = z.object({
 
 export type Overlay = z.infer<typeof OverlaySchema>;
 export type OverlayActiveEntity = z.infer<typeof OverlayActiveEntitySchema>;
+
+// ---------------------------------------------------------------------------
+// FunFactsSchema — spoiler-free "Did you know?" facts generated from ONLY a
+// book's title/author (+ optional era hint), shown BEFORE reading to make
+// the book more inviting to open (see src/ai/prompts/funfacts.ts). Unlike
+// every other schema in this file, this is real-world trivia rather than
+// content extracted from the book's own text — accuracy matters more than
+// coverage, so there is deliberately NO minimum array length: the prompt
+// instructs the model to omit a fact rather than invent one it isn't
+// confident about, and an empty list is a valid, honest result.
+// ---------------------------------------------------------------------------
+
+export const FUN_FACT_CATEGORIES = [
+  "author",
+  "history",
+  "trivia",
+  "legacy",
+] as const;
+
+export const FunFactSchema = z.object({
+  text: z.string().min(1),
+  category: z.enum(FUN_FACT_CATEGORIES),
+});
+
+const MAX_FUN_FACTS = 6;
+
+export const FunFactsSchema = z.object({
+  facts: z
+    .array(FunFactSchema)
+    .default([])
+    .transform((facts) => facts.slice(0, MAX_FUN_FACTS)),
+});
+
+export type FunFactCategory = (typeof FUN_FACT_CATEGORIES)[number];
+export type FunFact = z.infer<typeof FunFactSchema>;
+export type FunFacts = z.infer<typeof FunFactsSchema>;

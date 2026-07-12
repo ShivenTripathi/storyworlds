@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, jobs, worldReferences } from "@/db/schema";
-import { generateCoverForBook } from "@/services/cover";
+import { generateFunFactsForBook } from "@/services/funfacts";
 import {
   getFreeTierHeadroom,
   isHeadroomTooLow,
@@ -11,32 +11,32 @@ import { classifyPriorityTier, sortByPriority } from "./priority";
 import { inngest } from "./client";
 
 /**
- * Always-on cover-illustration backfill. Covers today are only generated
- * once, best-effort, right after synthesis (see analyze-book.ts's
- * persistWorld) — if that attempt fails (image pipeline hiccup, or the book
- * was analyzed before cover generation shipped), it's never retried on its
- * own. This sweep drains that backlog over time: each tick generates ONE
- * cover for ONE fully-analyzed book that still has none, then stops — the
- * next tick resumes wherever it left off, derived fresh from the DB every
- * time (no in-memory cursor, so it survives restarts/redeploys for free).
+ * Always-on "fun facts" backfill. Facts today are only generated once,
+ * best-effort, right after synthesis (see analyze-book.ts's persistWorld) —
+ * if that attempt fails (rate limit, DB hiccup, or the book was analyzed
+ * before fun facts shipped), it's never retried on its own. This sweep
+ * drains that backlog over time: each tick generates facts for ONE
+ * fully-analyzed book that still has none, then stops — the next tick
+ * resumes wherever it left off, derived fresh from the DB every time (no
+ * in-memory cursor, so it survives restarts/redeploys for free).
  *
- * Mirrors src/jobs/sweep-overlays.ts's shape: pace against free-tier
+ * Mirrors src/jobs/sweep-covers.ts's shape exactly: pace against free-tier
  * headroom, stay mutually exclusive with a running full analysis (which
  * already spends the ≤3-concurrent-Gemini-call budget on its own), and
  * prioritize catalog/published books (shared across every reader) before
  * private ones — see src/jobs/priority.ts.
  */
 
-const COVER_SWEEP_CRON = "TZ=UTC */5 * * * *";
+const FUNFACTS_SWEEP_CRON = "TZ=UTC */5 * * * *";
 
-export type SweepCoversResult =
+export type SweepFunFactsResult =
   | { skipped: "low_headroom"; headroomPct: number }
   | { skipped: "readers_active" }
   | { skipped: "analysis_running" }
   | { skipped: "none_eligible" }
   | { bookId: string; generated: boolean };
 
-interface CoverCandidate {
+interface FunFactsCandidate {
   bookId: string;
   createdAt: Date;
   catalogSource: string | null;
@@ -45,10 +45,10 @@ interface CoverCandidate {
 }
 
 /**
- * Every fully-analyzed book that still has no cover — one join, no per-book
- * fan-out, regardless of corpus size.
+ * Every fully-analyzed book that still has no fun facts — one join, no
+ * per-book fan-out, regardless of corpus size.
  */
-async function loadCoverCandidates(): Promise<CoverCandidate[]> {
+async function loadFunFactsCandidates(): Promise<FunFactsCandidate[]> {
   await dbReady;
 
   return db
@@ -67,31 +67,29 @@ async function loadCoverCandidates(): Promise<CoverCandidate[]> {
         eq(worldReferences.status, "completed"),
       ),
     )
-    .where(isNull(books.coverStorageKey));
+    .where(isNull(books.funFacts));
 }
 
 /**
  * One sweep tick. Skips while a full analyze_book run is actively in
- * progress, for the same reason sweep-overlays.ts does: analysis alone
+ * progress, for the same reason sweep-covers.ts does: analysis alone
  * already uses 3 concurrent LLM calls, so the sweepers stay mutually
  * exclusive in time to keep total concurrent Gemini calls at or under 3
  * system-wide (see CLAUDE.md ZERO-COST CONSTRAINT).
  */
-export async function sweepCoversOnce(): Promise<SweepCoversResult> {
+export async function sweepFunFactsOnce(): Promise<SweepFunFactsResult> {
   await dbReady;
+
+  if (await isReaderActive()) {
+    return { skipped: "readers_active" };
+  }
 
   const headroom = await getFreeTierHeadroom();
   if (isHeadroomTooLow(headroom)) {
     console.log(
-      `[sweep-covers] skipping tick — free-tier headroom at ${headroom.headroomPct}%`,
+      `[sweep-funfacts] skipping tick — free-tier headroom at ${headroom.headroomPct}%`,
     );
     return { skipped: "low_headroom", headroomPct: headroom.headroomPct };
-  }
-
-  // Yield to active readers so interactive chat / on-read illustrations own
-  // the per-minute rate limit (see isReaderActive).
-  if (await isReaderActive()) {
-    return { skipped: "readers_active" };
   }
 
   const [runningAnalysis] = await db
@@ -103,7 +101,7 @@ export async function sweepCoversOnce(): Promise<SweepCoversResult> {
     return { skipped: "analysis_running" };
   }
 
-  const candidates = await loadCoverCandidates();
+  const candidates = await loadFunFactsCandidates();
   if (candidates.length === 0) {
     return { skipped: "none_eligible" };
   }
@@ -118,29 +116,32 @@ export async function sweepCoversOnce(): Promise<SweepCoversResult> {
   const bookId = prioritized[0].bookId;
 
   try {
-    const storageKey = await generateCoverForBook(bookId);
-    return { bookId, generated: Boolean(storageKey) };
+    const facts = await generateFunFactsForBook(bookId);
+    return { bookId, generated: Boolean(facts) };
   } catch (err) {
-    // generateCoverForBook already catches internally and returns null —
+    // generateFunFactsForBook already catches internally and returns null —
     // this is defense in depth so a truly unexpected throw still leaves the
     // sweep function itself resolved (Inngest will just retry the step).
     console.error(
-      `[sweep-covers] cover generation failed for book ${bookId}:`,
+      `[sweep-funfacts] fun-facts generation failed for book ${bookId}:`,
       err,
     );
     return { bookId, generated: false };
   }
 }
 
-export const sweepCovers = inngest.createFunction(
+export const sweepFunFacts = inngest.createFunction(
   {
-    id: "sweep-covers",
+    id: "sweep-funfacts",
     concurrency: 1,
-    triggers: [{ cron: COVER_SWEEP_CRON }, { event: "cover/sweep.requested" }],
+    triggers: [
+      { cron: FUNFACTS_SWEEP_CRON },
+      { event: "funfacts/sweep.requested" },
+    ],
   },
   async ({ step }) => {
-    const result = await step.run("sweep-once", () => sweepCoversOnce());
-    console.log("[sweep-covers]", result);
+    const result = await step.run("sweep-once", () => sweepFunFactsOnce());
+    console.log("[sweep-funfacts]", result);
     return result;
   },
 );

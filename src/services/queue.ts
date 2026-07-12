@@ -14,6 +14,7 @@ import {
   books,
   jobs,
   overlays,
+  readingProgress,
   usageEvents,
   worldReferences,
 } from "@/db/schema";
@@ -74,6 +75,30 @@ export async function getFreeTierHeadroom(): Promise<FreeTierHeadroom> {
 /** True when the sweepers should skip this tick rather than start new work. */
 export function isHeadroomTooLow(headroom: FreeTierHeadroom): boolean {
   return headroom.headroomPct < HEADROOM_SKIP_THRESHOLD_PCT;
+}
+
+// A reader active within this window gets the free tier to themselves — the
+// background sweeps pause so an interactive chat / on-read illustration is
+// never rate-limited (15 RPM cap) by a background burst. The sweeps then run
+// at full speed during the quiet stretches (e.g. overnight) to drain the
+// corpus. `reading_progress.updatedAt` is a leading signal: it refreshes on
+// every page turn while someone is reading (and a chatting reader is reading).
+const READER_ACTIVE_WINDOW_SECONDS = 240;
+
+/**
+ * True when any reader has made progress in the last few minutes — meaning
+ * interactive Gemini traffic (chat, on-demand overlays) is likely in flight,
+ * so the background sweepers should yield this tick and not compete for the
+ * per-minute rate limit.
+ */
+export async function isReaderActive(): Promise<boolean> {
+  await dbReady;
+  const since = new Date(Date.now() - READER_ACTIVE_WINDOW_SECONDS * 1000);
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(readingProgress)
+    .where(gte(readingProgress.updatedAt, since));
+  return (row?.n ?? 0) > 0;
 }
 
 // ---------------------------------------------------------------------------

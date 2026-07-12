@@ -96,6 +96,14 @@ export const books = pgTable(
     // effort — see src/services/cover.ts); render the typographic fallback
     // cover (src/components/shelf/TypographicCover.tsx) while null.
     coverStorageKey: text("cover_storage_key"),
+    // Spoiler-free "Did you know?" facts (author/history/trivia/legacy) shown
+    // BEFORE reading to make the book more inviting to open — see
+    // FunFactsSchema (src/domain/schemas.ts) / src/ai/prompts/funfacts.ts.
+    // Shape: { facts: { text: string, category: 'author'|'history'|'trivia'|
+    // 'legacy' }[] }. Null until generated (best-effort, alongside analysis
+    // or via the backfill sweep — src/jobs/sweep-funfacts.ts); render
+    // nothing while null/empty rather than a placeholder.
+    funFacts: jsonb("fun_facts"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

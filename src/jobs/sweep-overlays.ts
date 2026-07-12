@@ -2,7 +2,11 @@ import { and, eq } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, jobs, overlays, worldReferences } from "@/db/schema";
 import { generateOverlayCore } from "@/services/overlays";
-import { getFreeTierHeadroom, isHeadroomTooLow } from "@/services/queue";
+import {
+  getFreeTierHeadroom,
+  isHeadroomTooLow,
+  isReaderActive,
+} from "@/services/queue";
 import {
   nextMissingOverlayChunks,
   selectNextBookForOverlays,
@@ -34,6 +38,7 @@ const OVERLAY_SWEEP_CONCURRENCY = 3;
 
 export type SweepOverlaysResult =
   | { skipped: "low_headroom"; headroomPct: number }
+  | { skipped: "readers_active" }
   | { skipped: "analysis_running" }
   | { skipped: "none_eligible" }
   | { bookId: string; attempted: number[]; succeeded: number[] };
@@ -119,6 +124,10 @@ async function runWithConcurrency<T>(
  */
 export async function sweepOverlaysOnce(): Promise<SweepOverlaysResult> {
   await dbReady;
+
+  if (await isReaderActive()) {
+    return { skipped: "readers_active" };
+  }
 
   const headroom = await getFreeTierHeadroom();
   if (isHeadroomTooLow(headroom)) {

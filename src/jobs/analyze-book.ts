@@ -33,6 +33,7 @@ import {
 import { segmentChunks } from "@/domain/segmentation";
 import { env } from "@/lib/env";
 import { generateCoverForBook } from "@/services/cover";
+import { generateFunFactsForBook } from "@/services/funfacts";
 import { generateOverlayCore } from "@/services/overlays";
 import { inngest } from "./client";
 
@@ -228,6 +229,20 @@ async function persistWorld(
   } catch (err) {
     console.error(
       `[analyze-book] cover generation failed for book ${bookId}:`,
+      err,
+    );
+  }
+
+  // Best-effort spoiler-free "fun facts" (see src/services/funfacts.ts) —
+  // generateFunFactsForBook already catches internally and returns null on
+  // any failure; this try/catch is defense in depth so a facts problem can
+  // never fail the analysis job it rides along with (see CLAUDE.md ZERO-COST
+  // CONSTRAINT + spec: "never block/fail analysis on a facts error").
+  try {
+    await generateFunFactsForBook(bookId);
+  } catch (err) {
+    console.error(
+      `[analyze-book] fun-facts generation failed for book ${bookId}:`,
       err,
     );
   }

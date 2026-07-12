@@ -31,6 +31,15 @@ export interface Book {
    * the book has been (re-)analyzed since blurb generation shipped — render
    * nothing when absent, never a placeholder. */
   blurb?: string | null;
+  /** Spoiler-free "Did you know?" facts, generated during analysis (see
+   * FunFactsSchema in src/domain/schemas.ts). Null/absent until generated —
+   * render nothing, never a placeholder. */
+  funFacts?: {
+    facts: {
+      text: string;
+      category: "author" | "history" | "trivia" | "legacy";
+    }[];
+  } | null;
   /** URL of the generated cover illustration (src/services/cover.ts), or
    * null until one exists. Render the typographic fallback cover
    * (TypographicCover) while null. */

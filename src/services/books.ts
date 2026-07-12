@@ -31,6 +31,7 @@ import {
   titleFromFilename,
   type BookSourceFormat,
 } from "@/domain/book-format";
+import { FunFactsSchema, type FunFacts } from "@/domain/schemas";
 import {
   computeStreaks,
   forwardReadRange,
@@ -433,6 +434,12 @@ export interface BookDto {
    * (see WorldSynthesisSchema.blurb / src/jobs/analyze-book.ts persistWorld).
    * Shown on Discover and the book-detail page, always BEFORE reading. */
   blurb?: string | null;
+  /** Spoiler-free "Did you know?" facts (author/history/trivia/legacy),
+   * shown BEFORE reading to make the book more inviting to open — see
+   * FunFactsSchema (src/domain/schemas.ts) / src/services/funfacts.ts. Null
+   * until generated (best-effort, alongside analysis or via the backfill
+   * sweep); render nothing while null/empty, never a placeholder. */
+  funFacts?: FunFacts | null;
   /** Resolved URL for the generated cover illustration (see
    * src/services/cover.ts + books.coverStorageKey), or null until one has
    * been generated. Render the typographic fallback cover
@@ -447,6 +454,20 @@ export interface BookDto {
     percent: number;
     lastReadAt?: string;
   };
+}
+
+/**
+ * Defensively re-validates a stored `books.funFacts` jsonb value through
+ * FunFactsSchema before it ever reaches a client — the column is nullable/
+ * freeform jsonb, so this guards against a null, a pre-migration shape, or
+ * (in principle) a hand-edited row ever crashing the DTO mapper. Returns
+ * null rather than throwing on anything that doesn't parse, matching every
+ * other optional field on this DTO (render nothing, never a placeholder).
+ */
+function parseStoredFunFacts(value: unknown): FunFacts | null {
+  if (!value) return null;
+  const parsed = FunFactsSchema.safeParse(value);
+  return parsed.success && parsed.data.facts.length > 0 ? parsed.data : null;
 }
 
 /**
@@ -472,6 +493,7 @@ export async function toBookDto(
     pricingTier?: string | null;
     sourceFormat?: string | null;
     blurb?: string | null;
+    funFacts?: unknown;
     coverStorageKey?: string | null;
   },
   progress?: {
@@ -498,6 +520,7 @@ export async function toBookDto(
     pricingTier: book.pricingTier ?? null,
     sourceFormat: book.sourceFormat ?? null,
     blurb: book.blurb ?? null,
+    funFacts: parseStoredFunFacts(book.funFacts),
     coverUrl,
   };
 

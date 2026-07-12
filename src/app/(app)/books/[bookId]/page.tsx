@@ -3,6 +3,7 @@
 import { use, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { FunFactsCard } from "@/components/book/FunFactsCard";
 import { TypographicCover } from "@/components/shelf/TypographicCover";
 import type { Book, ApiErrorBody } from "@/components/shelf/types";
 import { WorldFormingCard } from "@/components/world/WorldFormingCard";
@@ -279,6 +280,12 @@ export default function BookDetailPage({
           </div>
         </div>
       </div>
+
+      {book.funFacts && book.funFacts.facts.length > 0 ? (
+        <div className="mt-10">
+          <FunFactsCard facts={book.funFacts.facts} />
+        </div>
+      ) : null}
 
       <div className="mt-12">
         <StoryWorldSection

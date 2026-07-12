@@ -4,7 +4,8 @@ import { usageEvents } from "@/db/schema";
 import { env } from "@/lib/env";
 import { MockDriver } from "./mock";
 
-export type LlmOperation = "segment" | "synthesis" | "chat" | "overlay";
+export type LlmOperation =
+  "segment" | "synthesis" | "chat" | "overlay" | "funfacts";
 
 export interface CompleteJsonOptions<S extends z.ZodTypeAny> {
   operation: LlmOperation;
@@ -113,6 +114,8 @@ function modelForOperation(operation: LlmOperation): string {
     case "chat":
       return env.MODEL_CHAT;
     case "overlay":
+      return env.MODEL_SEGMENT;
+    case "funfacts":
       return env.MODEL_SEGMENT;
     default:
       return env.MODEL_SEGMENT;
