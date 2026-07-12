@@ -1,7 +1,14 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 import { ChatPanel } from "@/components/chat/ChatPanel";
 import { WorldFormingCard } from "@/components/world/WorldFormingCard";
 import { CastList } from "@/components/world/CastList";
@@ -17,6 +24,51 @@ type WorldTabId = "scene" | "cast" | "chat";
 function isCharacter(entity: WorldEntity): boolean {
   const k = entity.kind.toLowerCase().replace(/s$/, "");
   return k === "character" || k === "person";
+}
+
+// ---------------------------------------------------------------------------
+// Desktop rail width — user-resizable via the drag handle below, persisted
+// across sessions. Mobile ignores this entirely (the rail becomes a bottom
+// sheet under ~900px, sized by height, not width).
+// ---------------------------------------------------------------------------
+
+export const RAIL_WIDTH_MIN = 320;
+export const RAIL_WIDTH_MAX = 640;
+export const RAIL_WIDTH_DEFAULT = 340;
+
+const RAIL_WIDTH_STORAGE_KEY = "sw-rail-width";
+
+/** Clamps to [RAIL_WIDTH_MIN, RAIL_WIDTH_MAX] and never wider than ~60vw. */
+function clampRailWidth(width: number): number {
+  const viewportMax =
+    typeof window !== "undefined" ? window.innerWidth * 0.6 : RAIL_WIDTH_MAX;
+  return Math.min(RAIL_WIDTH_MAX, viewportMax, Math.max(RAIL_WIDTH_MIN, width));
+}
+
+/** Reads the reader's persisted rail width, falling back to the default. */
+export function loadRailWidth(): number {
+  if (typeof window === "undefined") return RAIL_WIDTH_DEFAULT;
+  try {
+    const raw = window.localStorage.getItem(RAIL_WIDTH_STORAGE_KEY);
+    const parsed = raw != null ? Number(raw) : NaN;
+    if (!Number.isFinite(parsed)) return RAIL_WIDTH_DEFAULT;
+    return clampRailWidth(parsed);
+  } catch {
+    return RAIL_WIDTH_DEFAULT;
+  }
+}
+
+/** Persists the reader's chosen rail width — best-effort, never throws. */
+export function saveRailWidth(width: number): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(
+      RAIL_WIDTH_STORAGE_KEY,
+      String(Math.round(width)),
+    );
+  } catch {
+    // best-effort — resizing still works for the rest of this session
+  }
 }
 
 /**
@@ -73,6 +125,22 @@ interface WorldRailProps {
    * second request for the same page.
    */
   overlay?: OverlayState;
+  /**
+   * Desktop rail width in pixels (ignored on the mobile bottom sheet). Owned
+   * by the reader so it can size the reading column's padding to match via
+   * the same `--reader-rail-width` custom property.
+   */
+  width: number;
+  /** Called with a new (already-clamped) width while dragging or nudging. */
+  onWidthChange: (width: number) => void;
+  /**
+   * Fired on pointer-down/up of the resize handle, so the reader can drop
+   * its padding transition for the duration of a drag — otherwise every
+   * pointermove would be chasing a 300ms-eased target instead of tracking
+   * the pointer directly.
+   */
+  onResizeStart?: () => void;
+  onResizeEnd?: () => void;
 }
 
 /**
@@ -87,6 +155,10 @@ export function WorldRail({
   onClose,
   currentChunk,
   overlay,
+  width,
+  onWidthChange,
+  onResizeStart,
+  onResizeEnd,
 }: WorldRailProps) {
   const [world, setWorld] = useState<World | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -197,7 +269,7 @@ export function WorldRail({
       aria-label="Story world"
       aria-hidden={!open}
       inert={!open ? true : undefined}
-      className={`fixed inset-x-0 bottom-0 z-50 flex h-[72dvh] max-h-[72dvh] flex-col rounded-t-lg border-t transition-transform duration-[250ms] ease-out focus:outline-none motion-reduce:transition-none md:inset-y-0 md:right-0 md:left-auto md:h-full md:max-h-none md:w-[340px] md:rounded-none md:border-t-0 md:border-l ${
+      className={`fixed inset-x-0 bottom-0 z-50 flex h-[72dvh] max-h-[72dvh] flex-col rounded-t-lg border-t transition-transform duration-[250ms] ease-out focus:outline-none motion-reduce:transition-none md:inset-y-0 md:right-0 md:left-auto md:h-full md:max-h-none md:w-[var(--reader-rail-width,340px)] md:rounded-none md:border-t-0 md:border-l ${
         open
           ? "translate-y-0 md:translate-x-0"
           : "translate-y-full md:translate-x-full md:translate-y-0"
@@ -212,6 +284,15 @@ export function WorldRail({
         color: "var(--foreground)",
       }}
     >
+      {/* Desktop-only resize handle on the rail's inner (left) edge — the
+          mobile bottom sheet has no horizontal boundary to drag. */}
+      <RailResizeHandle
+        width={width}
+        onWidthChange={onWidthChange}
+        onResizeStart={onResizeStart}
+        onResizeEnd={onResizeEnd}
+      />
+
       {/* Grab handle — a touch affordance that this bottom sheet is dismissible. */}
       <div className="flex shrink-0 justify-center pt-2 md:hidden" aria-hidden>
         <span
@@ -449,6 +530,128 @@ function ChatTab({
           initialMessage={initialMessage}
         />
       </div>
+    </div>
+  );
+}
+
+/**
+ * Drag handle on the rail's inner (left) edge, desktop-only — the mobile
+ * bottom sheet has no horizontal boundary to resize. Pointer drags and
+ * arrow-key nudges both flow through `onWidthChange`, already clamped to
+ * [RAIL_WIDTH_MIN, RAIL_WIDTH_MAX] and ~60vw. Drag updates are coalesced to
+ * one per animation frame so resizing never outruns layout.
+ */
+function RailResizeHandle({
+  width,
+  onWidthChange,
+  onResizeStart,
+  onResizeEnd,
+}: {
+  width: number;
+  onWidthChange: (width: number) => void;
+  onResizeStart?: () => void;
+  onResizeEnd?: () => void;
+}) {
+  const draggingRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
+  const pendingClientXRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
+
+  const handlePointerDown = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      draggingRef.current = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      // The rail's right edge is pinned to the viewport edge, so its width
+      // is simply the distance from the pointer to the viewport's right side.
+      document.body.style.userSelect = "none";
+      onResizeStart?.();
+    },
+    [onResizeStart],
+  );
+
+  const flushPendingWidth = useCallback(() => {
+    rafRef.current = null;
+    if (pendingClientXRef.current == null) return;
+    onWidthChange(
+      clampRailWidth(window.innerWidth - pendingClientXRef.current),
+    );
+  }, [onWidthChange]);
+
+  const handlePointerMove = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      if (!draggingRef.current) return;
+      pendingClientXRef.current = e.clientX;
+      if (rafRef.current != null) return;
+      rafRef.current = requestAnimationFrame(flushPendingWidth);
+    },
+    [flushPendingWidth],
+  );
+
+  const endDrag = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      draggingRef.current = false;
+      document.body.style.userSelect = "";
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      onResizeEnd?.();
+    },
+    [onResizeEnd],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent<HTMLDivElement>) => {
+      const step = e.shiftKey ? 48 : 16;
+      if (e.key === "ArrowLeft") {
+        // The boundary moves left → the rail (anchored to the right edge)
+        // gets wider.
+        e.preventDefault();
+        onWidthChange(clampRailWidth(width + step));
+      } else if (e.key === "ArrowRight") {
+        e.preventDefault();
+        onWidthChange(clampRailWidth(width - step));
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        onWidthChange(clampRailWidth(RAIL_WIDTH_MIN));
+      } else if (e.key === "End") {
+        e.preventDefault();
+        onWidthChange(clampRailWidth(RAIL_WIDTH_MAX));
+      }
+    },
+    [width, onWidthChange],
+  );
+
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize story world panel"
+      aria-valuenow={Math.round(width)}
+      aria-valuemin={RAIL_WIDTH_MIN}
+      aria-valuemax={RAIL_WIDTH_MAX}
+      // The WAI-ARIA "Window Splitter" pattern calls for a movable
+      // separator to be focusable (tabIndex 0) so arrow keys can resize it —
+      // jsx-a11y's interactive-roles list predates that pattern and treats
+      // "separator" as always non-interactive.
+      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
+      tabIndex={0}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onKeyDown={handleKeyDown}
+      className="group absolute inset-y-0 left-0 z-10 hidden w-3 -translate-x-1/2 cursor-col-resize touch-none focus-visible:outline-none md:flex md:items-center md:justify-center"
+    >
+      <span
+        aria-hidden="true"
+        className="h-10 w-1 rounded-full opacity-40 transition-opacity group-hover:opacity-70 group-focus-visible:opacity-100 motion-reduce:transition-none"
+        style={{ background: "var(--world-accent, var(--world-frame))" }}
+      />
     </div>
   );
 }

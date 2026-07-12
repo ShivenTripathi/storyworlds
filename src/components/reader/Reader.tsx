@@ -12,7 +12,12 @@ import {
 import { ChapterPlate } from "./ChapterPlate";
 import { ReaderSettings } from "./ReaderSettings";
 import { useOverlay } from "./useOverlay";
-import { WorldRail } from "./WorldRail";
+import {
+  loadRailWidth,
+  RAIL_WIDTH_DEFAULT,
+  saveRailWidth,
+  WorldRail,
+} from "./WorldRail";
 import {
   DEFAULT_SETTINGS,
   faceFamily,
@@ -56,6 +61,15 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
   const [chunkLoading, setChunkLoading] = useState(true);
   const [chromeVisible, setChromeVisible] = useState(true);
   const [railOpen, setRailOpen] = useState(false);
+  // Desktop rail width in px — mirrors WorldRail's default so there's no
+  // flash once localStorage is hydrated below. Owned here (rather than
+  // inside WorldRail) so the reading column's padding can size to the same
+  // value via the shared --reader-rail-width custom property.
+  const [railWidth, setRailWidth] = useState(RAIL_WIDTH_DEFAULT);
+  // True only while the resize handle is actively being dragged — drops the
+  // reading column's padding transition for that span so it tracks the
+  // pointer directly instead of chasing a 300ms-eased target.
+  const [railResizing, setRailResizing] = useState(false);
   const [settings, setSettings] =
     useState<ReaderSettingsState>(DEFAULT_SETTINGS);
 
@@ -82,6 +96,21 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
   useEffect(() => {
     saveReaderSettings(settings);
   }, [settings]);
+
+  // Hydrate the persisted rail width after mount — same reasoning as the
+  // settings hydration above (localStorage isn't available during SSR).
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional post-mount hydration, see comment above
+    setRailWidth(loadRailWidth());
+  }, []);
+
+  // Persist the rail width a beat after the reader stops changing it (drag
+  // moves/keyboard nudges fire far faster than is worth writing to
+  // localStorage for) — same debounce pattern as the progress save below.
+  useEffect(() => {
+    const t = setTimeout(() => saveRailWidth(railWidth), 300);
+    return () => clearTimeout(t);
+  }, [railWidth]);
 
   // Arm the overlay fetch ~300ms after the current chunk's text is on
   // screen — a deliberate delayed sync with a UI timer, not state derived
@@ -422,6 +451,7 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
         {
           "--reader-bg": theme.bg,
           "--reader-fg": theme.fg,
+          "--reader-rail-width": `${railWidth}px`,
           background: "var(--reader-bg)",
           color: "var(--reader-fg)",
         } as React.CSSProperties
@@ -546,9 +576,13 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
 
       {/* Text column */}
       <main
-        className={`relative z-10 mx-auto min-h-full px-12 pt-24 pb-20 transition-[padding] duration-300 motion-reduce:transition-none sm:px-6 ${
-          railOpen ? "md:pr-[340px]" : ""
-        }`}
+        className={`relative z-10 mx-auto min-h-full px-12 pt-24 pb-20 sm:px-6 ${
+          // Dropped entirely mid-drag — see railResizing above — so the
+          // column tracks the pointer instead of a 300ms-eased target.
+          railResizing
+            ? ""
+            : "transition-[padding] duration-300 motion-reduce:transition-none"
+        } ${railOpen ? "md:pr-[var(--reader-rail-width,340px)]" : ""}`}
       >
         <div
           className="mx-auto"
@@ -612,6 +646,10 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
         onClose={() => setRailOpen(false)}
         currentChunk={currentChunk}
         overlay={overlayState}
+        width={railWidth}
+        onWidthChange={setRailWidth}
+        onResizeStart={() => setRailResizing(true)}
+        onResizeEnd={() => setRailResizing(false)}
       />
     </div>
   );

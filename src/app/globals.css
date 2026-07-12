@@ -78,6 +78,11 @@
 
   --reader-bg: var(--card);
   --reader-fg: var(--foreground);
+  /* Desktop reader rail width — user-resizable (src/components/reader/
+     WorldRail.tsx), overridden inline per reader instance; this is just the
+     pre-hydration fallback so the arbitrary-value Tailwind classes that
+     reference it never resolve to nothing. */
+  --reader-rail-width: 340px;
 
   --spoiler-veil: var(--ink-800);
 

@@ -6,7 +6,6 @@ import { TypographicCover } from "./TypographicCover";
 import { BookCard } from "./BookCard";
 import { UploadBook } from "./UploadBook";
 import { DiscoverGrid } from "./DiscoverGrid";
-import { ReaderDashboard } from "@/components/analytics/ReaderDashboard";
 import type { Book } from "./types";
 
 type LoadState = "loading" | "ready" | "error";
@@ -87,7 +86,17 @@ export function ShelfClient() {
 
       {tab === "shelf" ? (
         <>
-          {books.length > 0 ? <ReaderDashboard className="mb-12" /> : null}
+          {books.length > 0 ? (
+            <div className="mb-8 flex justify-end">
+              <Link
+                href="/discoveries"
+                data-sound="tick"
+                className="font-ui text-sm text-muted-foreground underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+              >
+                See your Discoveries →
+              </Link>
+            </div>
+          ) : null}
           <MyShelf
             books={books}
             loadState={loadState}

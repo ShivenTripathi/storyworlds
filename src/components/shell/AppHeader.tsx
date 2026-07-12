@@ -19,14 +19,15 @@ interface NavLink {
 
 const NAV_LINKS: NavLink[] = [
   { href: "/shelf", label: "Shelf" },
+  { href: "/discoveries", label: "Discoveries" },
   { href: "/settings", label: "Settings" },
 ];
 
 /**
- * The app shell's top bar: wordmark, primary nav (Shelf / Settings, plus
- * Admin for admins), and the Clerk account menu. A skip-link precedes
- * everything so keyboard/screen-reader users can bypass it straight to
- * the page content.
+ * The app shell's top bar: wordmark, primary nav (Shelf / Discoveries /
+ * Settings, plus Admin for admins), and the Clerk account menu. A skip-link
+ * precedes everything so keyboard/screen-reader users can bypass it
+ * straight to the page content.
  */
 export function AppHeader() {
   const pathname = usePathname();
@@ -86,6 +87,9 @@ export function AppHeader() {
                     <Link
                       href={link.href}
                       aria-current={active ? "page" : undefined}
+                      data-sound={
+                        link.href === "/discoveries" ? "tick" : undefined
+                      }
                       className={`rounded-md px-1 py-1 font-ui text-sm transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none ${
                         active
                           ? "font-medium text-foreground"
