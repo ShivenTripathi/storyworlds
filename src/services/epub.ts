@@ -178,13 +178,38 @@ function findEntry(
  * dependencies (fflate) so it runs on Vercel serverless without native
  * bindings.
  */
+// Zip-bomb guard for the EPUB path: a small .epub can carry entries that
+// inflate to gigabytes and OOM the serverless function before any downstream
+// chunk/size caps run. Refuse to decompress once the cumulative (or any
+// single) uncompressed entry exceeds this — mirrors MAX_DECOMPRESSED_BYTES on
+// the gzip upload path.
+const MAX_EPUB_DECOMPRESSED_BYTES = 200 * 1024 * 1024;
+
 export async function extractEpubText(
   data: Uint8Array,
 ): Promise<EpubExtractResult> {
   let entries: Record<string, Uint8Array>;
   try {
-    entries = unzipSync(data);
+    // fflate reports each entry's uncompressed `originalSize` from the zip
+    // central directory in the filter callback, BEFORE inflating it — so we
+    // can bail on a decompression bomb without ever allocating it.
+    let totalOut = 0;
+    entries = unzipSync(data, {
+      filter: (file) => {
+        totalOut += file.originalSize;
+        if (
+          file.originalSize > MAX_EPUB_DECOMPRESSED_BYTES ||
+          totalOut > MAX_EPUB_DECOMPRESSED_BYTES
+        ) {
+          throw new EpubParseError(
+            "EPUB decompresses to an unreasonable size — refusing to process.",
+          );
+        }
+        return true;
+      },
+    });
   } catch (err) {
+    if (err instanceof EpubParseError) throw err;
     throw new EpubParseError(
       `Not a valid EPUB (zip) archive: ${err instanceof Error ? err.message : String(err)}`,
     );

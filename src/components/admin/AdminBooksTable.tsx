@@ -13,6 +13,7 @@ interface AdminBooksTableProps {
   ) => Promise<void>;
   onArchetypeChange: (bookId: string, archetype: Archetype) => Promise<void>;
   onRetry: (bookId: string) => Promise<void>;
+  onDelete: (bookId: string) => Promise<void>;
 }
 
 const CLASS_META: Record<AdminBookClass, { label: string; hint: string }> = {
@@ -55,6 +56,7 @@ export function AdminBooksTable({
   onTogglePublish,
   onArchetypeChange,
   onRetry,
+  onDelete,
 }: AdminBooksTableProps) {
   const [filter, setFilter] = useState<AdminBookClass | "all">("all");
 
@@ -133,6 +135,7 @@ export function AdminBooksTable({
                   onTogglePublish={onTogglePublish}
                   onArchetypeChange={onArchetypeChange}
                   onRetry={onRetry}
+                  onDelete={onDelete}
                 />
               ))}
             </tbody>
@@ -177,6 +180,7 @@ function BookRow({
   onTogglePublish,
   onArchetypeChange,
   onRetry,
+  onDelete,
 }: {
   book: AdminBookRow;
   onTogglePublish: (
@@ -185,9 +189,11 @@ function BookRow({
   ) => Promise<void>;
   onArchetypeChange: (bookId: string, archetype: Archetype) => Promise<void>;
   onRetry: (bookId: string) => Promise<void>;
+  onDelete: (bookId: string) => Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
   const [confirmingRetry, setConfirmingRetry] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [rowError, setRowError] = useState<string | null>(null);
   const isPublished = book.visibility === "published";
   const archetype = (book.themeArchetype ?? "classic") as Archetype;
@@ -221,6 +227,13 @@ function BookRow({
     await withRowError(async () => {
       await onRetry(book.id);
       setConfirmingRetry(false);
+    });
+  }
+
+  async function handleDelete() {
+    await withRowError(async () => {
+      await onDelete(book.id);
+      setConfirmingDelete(false);
     });
   }
 
@@ -351,6 +364,40 @@ function BookRow({
                 className="rounded-full border border-border px-2.5 py-1 text-xs disabled:opacity-50"
               >
                 Retry analysis
+              </button>
+            )}
+
+            {confirmingDelete ? (
+              <span className="flex items-center gap-1.5 text-xs">
+                <span className="text-muted-foreground">
+                  Delete permanently?
+                </span>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={busy}
+                  className="rounded px-1.5 py-0.5 text-xs font-medium text-[var(--destructive)] disabled:opacity-50"
+                >
+                  {busy ? "Deleting…" : "Delete"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(false)}
+                  disabled={busy}
+                  className="rounded px-1.5 py-0.5 text-xs text-muted-foreground"
+                >
+                  Cancel
+                </button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(true)}
+                disabled={busy}
+                aria-label={`Delete ${book.title}`}
+                className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:border-[var(--destructive)] hover:text-[var(--destructive)] disabled:opacity-50"
+              >
+                Delete
               </button>
             )}
           </div>

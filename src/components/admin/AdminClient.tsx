@@ -96,6 +96,12 @@ export function AdminClient() {
     );
   }
 
+  async function handleDelete(bookId: string) {
+    await withOptimisticReload(() =>
+      fetch(`/api/admin/books/${bookId}`, { method: "DELETE" }),
+    );
+  }
+
   if (loadState === "loading") {
     return (
       <div className="py-24 text-center">
@@ -158,6 +164,7 @@ export function AdminClient() {
         onTogglePublish={handleTogglePublish}
         onArchetypeChange={handleArchetypeChange}
         onRetry={handleRetry}
+        onDelete={handleDelete}
       />
     </div>
   );

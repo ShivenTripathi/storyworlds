@@ -4,6 +4,7 @@ import { db, dbReady } from "@/db";
 import { entities, entityAliases, jobs, worldReferences } from "@/db/schema";
 import { requireBookAccess, requireUser } from "@/lib/auth";
 import { ApiError, handleApiError } from "@/lib/errors";
+import { rateLimit } from "@/lib/rate-limit";
 import { inngest } from "@/jobs/client";
 
 type Params = { params: Promise<{ bookId: string }> };
@@ -13,6 +14,14 @@ export async function POST(req: Request, { params }: Params) {
     await dbReady;
     const { bookId } = await params;
     const { userId } = await requireUser();
+
+    // Analysis is the single most expensive LLM operation (one segment call
+    // per chunk-group across the whole book + a synthesis call). Throttle it
+    // hard so a reader can't loop `?force=1` re-analysis and drain the shared
+    // Gemini free-tier daily quota for everyone (see CLAUDE.md ZERO-COST
+    // CONSTRAINT). Every other LLM-triggering route is likewise limited.
+    rateLimit(`user:${userId}:analyze`, { windowSeconds: 600, max: 3 });
+
     const book = await requireBookAccess(bookId, userId, { write: true });
 
     if (book.status !== "ready") {
@@ -65,7 +74,12 @@ export async function POST(req: Request, { params }: Params) {
     if (world?.status === "completed") {
       if (!force) {
         return NextResponse.json(
-          { error: { code: "already_analyzed", message: "This book has already been analyzed." } },
+          {
+            error: {
+              code: "already_analyzed",
+              message: "This book has already been analyzed.",
+            },
+          },
           { status: 409 },
         );
       }
@@ -73,7 +87,9 @@ export async function POST(req: Request, { params }: Params) {
       // force=1: wipe existing world/entities/aliases before re-running.
       await db.delete(entityAliases).where(eq(entityAliases.bookId, bookId));
       await db.delete(entities).where(eq(entities.bookId, bookId));
-      await db.delete(worldReferences).where(eq(worldReferences.bookId, bookId));
+      await db
+        .delete(worldReferences)
+        .where(eq(worldReferences.bookId, bookId));
     }
 
     const [job] = await db
