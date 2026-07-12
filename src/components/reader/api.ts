@@ -1,4 +1,9 @@
-import type { BookResponse, ChunkPayload, ReadingProgress } from "./types";
+import type {
+  BookResponse,
+  ChunkPayload,
+  ReadingProgress,
+  TocResponse,
+} from "./types";
 
 /**
  * Thin fetch wrapper for the Reader's API contract. All routes are
@@ -46,6 +51,12 @@ export function fetchBook(bookId: string): Promise<BookResponse> {
 
 export function fetchChunk(bookId: string, idx: number): Promise<ChunkPayload> {
   return request<ChunkPayload>(`/api/books/${bookId}/chunks/${idx}`);
+}
+
+/** Table-of-contents entries + per-chunk word counts — fetched once per
+ * reader session (see Reader.tsx), not on every page turn. */
+export function fetchToc(bookId: string): Promise<TocResponse> {
+  return request<TocResponse>(`/api/books/${bookId}/toc`);
 }
 
 /** URL + JSON body for a progress PUT, shared by the async helper and the

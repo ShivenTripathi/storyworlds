@@ -22,6 +22,13 @@ export interface TocEntry {
   title: string;
 }
 
+/** One chapter/section-heading hit, located to the chunk it was found in —
+ * the unit the reader's table-of-contents jump menu navigates by. */
+export interface TocHeading {
+  title: string;
+  chunkIdx: number;
+}
+
 export type Block =
   | { kind: "display"; level: "title" | "meta"; text: string }
   | { kind: "heading"; text: string; section?: boolean }
@@ -212,6 +219,31 @@ export function formatChunk(text: string): Block[] {
   }
 
   return blocks;
+}
+
+/**
+ * Scans a book's chunks (in reading order) for chapter/section headings,
+ * returning one entry per titled heading with the chunk index it lives in —
+ * the reader's table-of-contents jump menu source data. Reuses the exact
+ * same `formatChunk` heading detection the reader already renders with, so
+ * a TOC entry always corresponds to a heading actually shown on the page.
+ *
+ * Bare section markers (a lone "I." with no title — `block.section` true)
+ * are skipped: they carry no readable title worth listing, unlike a titled
+ * heading such as "CHAPTER I" or "IV. The Sign of Four".
+ */
+export function collectToc(
+  chunkTexts: { idx: number; text: string }[],
+): TocHeading[] {
+  const toc: TocHeading[] = [];
+  for (const { idx, text } of chunkTexts) {
+    for (const block of formatChunk(text)) {
+      if (block.kind === "heading" && !block.section) {
+        toc.push({ title: block.text, chunkIdx: idx });
+      }
+    }
+  }
+  return toc;
 }
 
 /** First non-space character of a run list — used to render a drop cap. */

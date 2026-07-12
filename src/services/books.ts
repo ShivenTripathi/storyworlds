@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, chunks, purchases, readingProgress } from "@/db/schema";
 import { ApiError } from "@/lib/errors";
@@ -659,6 +659,25 @@ export async function getChunk(bookId: string, idx: number) {
     .where(and(eq(chunks.bookId, bookId), eq(chunks.idx, idx)))
     .limit(1);
   return chunk;
+}
+
+/**
+ * Every chunk's text for a book, in reading order — the source data for the
+ * table-of-contents scan (`collectToc` in `src/domain/reader-format.ts`) and
+ * its accompanying per-chunk word counts. This reads the full text of every
+ * chunk, so callers should treat it as a one-shot, not-cheap-for-huge-books
+ * query (the `/toc` route fetches it once per reader session, not per page
+ * turn).
+ */
+export async function getChunkTexts(
+  bookId: string,
+): Promise<{ idx: number; text: string }[]> {
+  await dbReady;
+  return db
+    .select({ idx: chunks.idx, text: chunks.text })
+    .from(chunks)
+    .where(eq(chunks.bookId, bookId))
+    .orderBy(asc(chunks.idx));
 }
 
 /**

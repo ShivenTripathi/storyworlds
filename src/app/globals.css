@@ -455,6 +455,14 @@ h6 {
   margin-top: 0;
 }
 
+/* Justification toggle (off by default) — full justification with sensible
+   hyphenation for body paragraphs only; headings/display/TOC lines stay as
+   set (centered/left) regardless. */
+.reader-prose--justify .reader-para {
+  text-align: justify;
+  text-justify: inter-word;
+}
+
 /* Chapter drop cap — a large Fraunces initial the text wraps around. */
 .reader-dropcap {
   float: left;

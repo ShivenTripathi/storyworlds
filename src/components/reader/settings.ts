@@ -78,6 +78,11 @@ export const PAGE_VIEWS: { id: PageViewId; label: string }[] = [
   { id: "spread", label: "Spread" },
 ];
 
+export const JUSTIFY_OPTIONS: { id: boolean; label: string }[] = [
+  { id: false, label: "Ragged" },
+  { id: true, label: "Justified" },
+];
+
 export interface ReaderSettingsState {
   v: 1;
   theme: ReaderThemeId;
@@ -87,6 +92,9 @@ export interface ReaderSettingsState {
   measure: MeasureId;
   /** Optional (added after v1 shipped; defaulted on load for old clients). */
   pageView?: PageViewId;
+  /** Full justification of body paragraphs, off by default. Optional for the
+   * same reason as `pageView` above. */
+  justify?: boolean;
 }
 
 // Dusk closely matches the app's default dark "Fireside" card/foreground
@@ -99,6 +107,7 @@ export const DEFAULT_SETTINGS: ReaderSettingsState = {
   lineHeight: 1.65, // spec default 1.7, snapped to nearest step (1.65)
   measure: "comfort",
   pageView: "single",
+  justify: false,
 };
 
 const STORAGE_KEY = "sw-reader-settings";

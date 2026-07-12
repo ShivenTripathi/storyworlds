@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { formatChunk, reflowProse, splitDropCap } from "@/domain/reader-format";
+import {
+  collectToc,
+  formatChunk,
+  reflowProse,
+  splitDropCap,
+} from "@/domain/reader-format";
 
 function paraText(block: ReturnType<typeof formatChunk>[number]): string {
   if (block.kind !== "para")
@@ -80,6 +85,41 @@ describe("formatChunk", () => {
     // A bare section number does not open a chapter, so no drop cap.
     expect(blocks[1]).toMatchObject({ kind: "para" });
     expect((blocks[1] as { dropCap?: boolean }).dropCap).toBeUndefined();
+  });
+});
+
+describe("collectToc", () => {
+  it("collects one entry per titled heading, tagged with its chunk index", () => {
+    const toc = collectToc([
+      { idx: 0, text: "DRACULA\n\nBram Stoker" },
+      { idx: 1, text: "CHAPTER I\n\nJonathan Harker's Journal." },
+      { idx: 5, text: "CHAPTER II\n\nWe left in the morning." },
+    ]);
+    expect(toc).toEqual([
+      { title: "CHAPTER I", chunkIdx: 1 },
+      { title: "CHAPTER II", chunkIdx: 5 },
+    ]);
+  });
+
+  it("skips bare section markers (no title to show in a jump menu)", () => {
+    const toc = collectToc([
+      { idx: 0, text: "I.\n\nTo Sherlock Holmes she is always the woman." },
+    ]);
+    expect(toc).toEqual([]);
+  });
+
+  it("keeps a titled roman-numeral heading (has a title, unlike a bare marker)", () => {
+    const toc = collectToc([
+      { idx: 3, text: "IV. The Sign of Four\n\nSome text follows." },
+    ]);
+    expect(toc).toEqual([{ title: "IV. The Sign of Four", chunkIdx: 3 }]);
+  });
+
+  it("returns an empty list for chunks with no headings", () => {
+    const toc = collectToc([
+      { idx: 0, text: "Just an ordinary paragraph of prose." },
+    ]);
+    expect(toc).toEqual([]);
   });
 });
 

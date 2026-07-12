@@ -5,6 +5,7 @@ import {
   FACES,
   FONT_SIZE_MAX,
   FONT_SIZE_MIN,
+  JUSTIFY_OPTIONS,
   LINE_HEIGHTS,
   MEASURES,
   PAGE_VIEWS,
@@ -257,6 +258,32 @@ export function ReaderSettings({
                       }}
                     >
                       {pv.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section>
+              <p className="eyebrow mb-2">Justification</p>
+              <div className="flex gap-2">
+                {JUSTIFY_OPTIONS.map((opt) => {
+                  const active = (settings.justify ?? false) === opt.id;
+                  return (
+                    <button
+                      key={String(opt.id)}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => patch({ justify: opt.id })}
+                      className="flex-1 rounded-md border py-2 font-ui text-xs focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+                      style={{
+                        borderColor: active
+                          ? "var(--world-accent)"
+                          : "var(--border)",
+                        color: active ? "var(--world-accent)" : "inherit",
+                      }}
+                    >
+                      {opt.label}
                     </button>
                   );
                 })}

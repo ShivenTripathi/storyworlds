@@ -36,9 +36,34 @@ type ShareButtonProps =
       /** Optional: attributes the achievement to a book. Omit for cross-book milestones (e.g. reading streak). */
       bookId?: string;
       className?: string;
+    }
+  | {
+      kind: "quote";
+      /** The book the quote is from — used for attribution and the OG image
+       * card. Unlike "book" share, this isn't restricted to published books:
+       * a reader sharing a passage from their own (possibly private) upload
+       * is always allowed, since they already have the text in hand. The OG
+       * *image* still falls back to the generic branded card for a private
+       * book (see the /api/og/book route) — only the plain-text share/copy
+       * carries the quote itself. */
+      bookId: string;
+      title: string;
+      author?: string | null;
+      quote: string;
+      className?: string;
     };
 
-function buildUrls(props: ShareButtonProps, origin: string) {
+const MAX_QUOTE_CHARS = 240;
+
+/**
+ * Builds the three URLs/strings every share surface needs: the OG image to
+ * link/download, the destination URL to attribute the share back to the
+ * book, and the plain-text blurb for native share / copy-link. Exported so
+ * other in-app share triggers (e.g. the reading-column selection popover's
+ * "Share quote") can reuse the exact same OG/URL conventions without
+ * rendering a second, nested `<ShareButton>`.
+ */
+export function buildShareUrls(props: ShareButtonProps, origin: string) {
   const params = new URLSearchParams();
   let ogPath: string;
   let shareText: string;
@@ -60,6 +85,14 @@ function buildUrls(props: ShareButtonProps, origin: string) {
     // README "wiring" note). `ref` is just an attribution query param, not
     // a lookup key.
     destPath = `/?ref=share-book&book=${encodeURIComponent(props.bookId)}`;
+  } else if (props.kind === "quote") {
+    const quote = props.quote.trim().slice(0, MAX_QUOTE_CHARS);
+    params.set("quote", quote);
+    ogPath = `/api/og/book/${encodeURIComponent(props.bookId)}`;
+    shareText = props.author
+      ? `"${quote}"\n— ${props.title} by ${props.author} (via Story Worlds)`
+      : `"${quote}"\n— ${props.title} (via Story Worlds)`;
+    destPath = `/?ref=share-quote&book=${encodeURIComponent(props.bookId)}`;
   } else {
     params.set("kind", props.achievementKind);
     params.set("label", props.label);
@@ -127,7 +160,7 @@ export function ShareButton(props: ShareButtonProps) {
     return null;
   }
 
-  const { ogImageUrl, shareUrl, shareText } = buildUrls(props, origin);
+  const { ogImageUrl, shareUrl, shareText } = buildShareUrls(props, origin);
   const canNativeShare =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
 

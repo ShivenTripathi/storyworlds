@@ -34,6 +34,10 @@ const queryHint = z.object({
   cast: z.coerce.number().int().min(0).max(100_000).optional(),
   total: z.coerce.number().int().min(0).max(100_000).optional(),
   days: z.coerce.number().int().min(0).max(100_000).optional(),
+  /** A reader-selected passage, from the reading-column "Share quote" action
+   * (see src/components/reader/SelectionPopover.tsx + ShareButton's "quote"
+   * kind). Truncated defensively even though the client already caps it. */
+  quote: z.string().max(400).optional(),
 });
 
 const UUID_RE =
@@ -218,6 +222,71 @@ function BookCard({
   );
 }
 
+const MAX_QUOTE_LEN = 240;
+
+/** Share-a-quote card: the passage itself, set large, with book title/author
+ * attribution below — the shareable-image half of the reading column's
+ * "Share quote" action (the plain-text half is copy/native-share, built by
+ * ShareButton's `buildShareUrls("quote", …)`). */
+function QuoteCard({
+  quote,
+  title,
+  author,
+}: {
+  quote: string;
+  title: string;
+  author: string | null;
+}) {
+  return (
+    <Frame>
+      <div
+        style={{
+          display: "flex",
+          flex: 1,
+          flexDirection: "column",
+          justifyContent: "center",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            fontFamily: OG_FONT_DISPLAY,
+            fontSize: 20,
+            color: OG_COLORS.gild,
+            marginBottom: 24,
+          }}
+        >
+          “
+        </div>
+        <div
+          style={{
+            display: "flex",
+            fontFamily: OG_FONT_DISPLAY,
+            fontSize: quote.length > 140 ? 38 : 48,
+            lineHeight: 1.35,
+            color: OG_COLORS.text,
+            maxWidth: 920,
+          }}
+        >
+          {truncate(quote, MAX_QUOTE_LEN)}
+        </div>
+        <div
+          style={{
+            display: "flex",
+            marginTop: 36,
+            fontSize: 24,
+            color: OG_COLORS.ember,
+          }}
+        >
+          {author
+            ? `${truncate(title, MAX_TITLE_LEN)} — ${truncate(author, MAX_AUTHOR_LEN)}`
+            : truncate(title, MAX_TITLE_LEN)}
+        </div>
+      </div>
+    </Frame>
+  );
+}
+
 type Params = { params: Promise<{ bookId: string }> };
 
 export async function GET(req: Request, { params }: Params) {
@@ -227,6 +296,7 @@ export async function GET(req: Request, { params }: Params) {
     cast: url.searchParams.get("cast") ?? undefined,
     total: url.searchParams.get("total") ?? undefined,
     days: url.searchParams.get("days") ?? undefined,
+    quote: url.searchParams.get("quote") ?? undefined,
   });
   const q = parsedQuery.success ? parsedQuery.data : {};
 
@@ -237,7 +307,13 @@ export async function GET(req: Request, { params }: Params) {
       await dbReady;
       const book = await getBook(bookId);
       if (book && book.visibility === "published") {
-        card = (
+        card = q.quote ? (
+          <QuoteCard
+            quote={q.quote}
+            title={truncate(book.title, MAX_TITLE_LEN)}
+            author={book.author ? truncate(book.author, MAX_AUTHOR_LEN) : null}
+          />
+        ) : (
           <BookCard
             title={truncate(book.title, MAX_TITLE_LEN)}
             author={book.author ? truncate(book.author, MAX_AUTHOR_LEN) : null}
