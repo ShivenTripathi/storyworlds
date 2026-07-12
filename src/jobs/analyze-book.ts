@@ -50,6 +50,28 @@ const defaultStepRunner: StepRunner = (_name, fn) => fn();
 const MAX_STORED_STRING = 500;
 const SEGMENT_CONCURRENCY = 3;
 
+/**
+ * Bumped whenever a change to this pipeline (segment/synthesis prompts,
+ * schemas, or persistence logic) invalidates data already stored for
+ * previously-analyzed books, so the always-on sweeper (src/jobs/sweep-
+ * analysis.ts) knows to re-enqueue them for a backfill even though their
+ * `world_references.status` is already 'completed'. Persisted into
+ * `worldReferences.modelVersions.pipeline` by `persistWorld` below — see
+ * `select-analysis-candidate.ts` for how never-analyzed books are still
+ * preferred over this kind of stale backfill.
+ *
+ * Version history:
+ *   (unset) -> pre-fix baseline: `buildNotesDigest` dropped per-segment page
+ *              anchors, so the synthesis pass had nothing to set
+ *              `introducedAtPage`/`approxPage` from and a whole cluster of
+ *              entities collapsed onto page 1 (the reported "world panel
+ *              shows stuff from page 1" bug).
+ *   2       -> `buildNotesDigest` carries "[first seen p.N]" / "[p.N]"
+ *              anchors through to the synthesis prompt, which now requires
+ *              introducedAtPage/approxPage on every entity/timeline entry.
+ */
+export const PIPELINE_VERSION = 2;
+
 function truncate(
   s: string | undefined,
   max = MAX_STORED_STRING,
@@ -135,6 +157,21 @@ async function persistWorld(
 ): Promise<void> {
   await dbReady;
 
+  // Idempotency for re-analysis (a stale-pipeline-version backfill via the
+  // sweeper, or a manual force-retry): entities.id is deterministically
+  // minted from the entity's name (slugifyEntity), so re-running analysis
+  // over the same book text almost always re-mints the SAME ids for the
+  // SAME characters. Without clearing the prior rows first, the insert below
+  // would violate the (bookId, id) primary key on entities — or, if the
+  // synthesis worded a name slightly differently this time, silently leave a
+  // stale duplicate entity/alias set behind alongside the fresh one. Clearing
+  // both tables for this book immediately before the fresh insert keeps a
+  // (re-)analyzed book at exactly one clean entity/alias set. (entityAliases
+  // also FK-cascades off entities, but deleting it explicitly here keeps this
+  // idempotency guarantee legible without relying on that cascade.)
+  await db.delete(entityAliases).where(eq(entityAliases.bookId, bookId));
+  await db.delete(entities).where(eq(entities.bookId, bookId));
+
   const taken = new Set<string>();
   const mintedIds = synthesis.entities.map((e) => {
     const baseSlug = slugifyEntity(e.kind as EntityKind, e.name);
@@ -189,6 +226,7 @@ async function persistWorld(
   const modelVersions = {
     segment: env.MODEL_SEGMENT,
     synthesis: env.MODEL_SYNTHESIS,
+    pipeline: PIPELINE_VERSION,
   };
   const worldValues = {
     status: "completed" as const,

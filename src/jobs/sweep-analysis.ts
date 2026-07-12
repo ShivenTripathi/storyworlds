@@ -1,4 +1,4 @@
-import { and, isNull, ne, or, eq, inArray } from "drizzle-orm";
+import { and, isNull, ne, or, eq, inArray, sql } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, jobs, worldReferences } from "@/db/schema";
 import {
@@ -6,6 +6,7 @@ import {
   isHeadroomTooLow,
   isReaderActive,
 } from "@/services/queue";
+import { PIPELINE_VERSION } from "./analyze-book";
 import {
   selectNextBookForAnalysis,
   type AnalysisCandidateInput,
@@ -38,14 +39,29 @@ export type SweepAnalysisResult =
   | { enqueued: string; jobId: string };
 
 /**
- * Loads every book that still needs analysis (status='ready' AND its
- * world_reference is missing or not 'completed'), each annotated with its
- * most recent analyze_book job (if any) and total failed-attempt count —
+ * Loads every book that still needs analysis, each annotated with its most
+ * recent analyze_book job (if any) and total failed-attempt count —
  * everything src/jobs/select-analysis-candidate.ts's pure selector needs.
  * Two fixed queries regardless of corpus size (no per-book fan-out).
+ *
+ * A book qualifies (status='ready' AND either):
+ *   - its world_reference is missing or not 'completed' (never successfully
+ *     analyzed — first-time analysis), or
+ *   - its world_reference IS 'completed' but was produced by an older
+ *     pipeline (`model_versions->>'pipeline'` missing or < PIPELINE_VERSION)
+ *     — a stale-data backfill (see analyze-book.ts's PIPELINE_VERSION doc:
+ *     this is how already-analyzed books self-correct the "world panel
+ *     shows stuff from page 1" bug without a manual re-trigger per book).
+ * `neverAnalyzed` on the returned candidate distinguishes the two so the
+ * selector can prefer first-time analysis for the scarce free-tier quota.
  */
 async function loadAnalysisCandidates(): Promise<AnalysisCandidateInput[]> {
   await dbReady;
+
+  const stalePipeline = sql`(
+    ${worldReferences.modelVersions} ->> 'pipeline' is null
+    or (${worldReferences.modelVersions} ->> 'pipeline')::int < ${PIPELINE_VERSION}
+  )`;
 
   const candidateBooks = await db
     .select({
@@ -54,6 +70,7 @@ async function loadAnalysisCandidates(): Promise<AnalysisCandidateInput[]> {
       catalogSource: books.catalogSource,
       visibility: books.visibility,
       pricingTier: books.pricingTier,
+      worldStatus: worldReferences.status,
     })
     .from(books)
     .leftJoin(worldReferences, eq(worldReferences.bookId, books.id))
@@ -63,6 +80,7 @@ async function loadAnalysisCandidates(): Promise<AnalysisCandidateInput[]> {
         or(
           isNull(worldReferences.bookId),
           ne(worldReferences.status, "completed"),
+          and(eq(worldReferences.status, "completed"), stalePipeline),
         ),
       ),
     );
@@ -109,6 +127,11 @@ async function loadAnalysisCandidates(): Promise<AnalysisCandidateInput[]> {
     pricingTier: b.pricingTier,
     lastJob: lastJobByBook.get(b.bookId) ?? null,
     failedAttempts: failedCountByBook.get(b.bookId) ?? 0,
+    // Anything other than a 'completed' world reference has never finished
+    // a successful analysis (first-time or a previously failed/partial
+    // attempt); a 'completed' one only reaches this list at all because it's
+    // stale-pipeline (see the query above), never because it's fresh.
+    neverAnalyzed: b.worldStatus !== "completed",
   }));
 }
 

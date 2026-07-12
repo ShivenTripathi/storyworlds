@@ -23,6 +23,16 @@ export interface AnalysisCandidateInput extends PriorityBookFields {
   lastJob: { status: AnalyzeJobStatus; updatedAt: Date } | null;
   /** Count of `analyze_book` jobs for this book with status='failed'. */
   failedAttempts: number;
+  /**
+   * True when this book has never had a successful ('completed') world
+   * reference — i.e. this would be its first-time analysis. False means a
+   * completed world reference already exists and this candidate is only
+   * present because it's stale (produced by an older PIPELINE_VERSION — see
+   * analyze-book.ts) and is being re-analyzed as a backfill. Never-analyzed
+   * books always win the scarce free-tier analysis quota over stale
+   * backfill — see `selectNextBookForAnalysis` below.
+   */
+  neverAnalyzed: boolean;
 }
 
 export interface AnalysisSelectionOptions {
@@ -73,10 +83,18 @@ export function isBookEligibleForAnalysis(
 /**
  * Picks the single next book to enqueue for analysis from a pre-filtered
  * list of candidates (caller is responsible for the DB-level filter:
- * books.status='ready' AND world_reference missing/not 'completed').
+ * books.status='ready' AND (world_reference missing/not 'completed' OR
+ * completed-but-stale-pipeline — see sweep-analysis.ts's loadAnalysisCandidates).
  * Catalog/published books are drained before private ones; oldest first
  * within a tier. Never returns a book that's already in flight, cooling
  * down after a failure, or over the retry cap.
+ *
+ * Never-analyzed candidates (`neverAnalyzed: true`) are always selected
+ * before stale-pipeline re-analysis candidates, regardless of tier — a
+ * reader waiting on their FIRST world reference always wins the scarce
+ * free-tier quota over the self-healing backfill of an already-readable
+ * book. Within each of those two groups, the usual tier/age ordering
+ * applies.
  */
 export function selectNextBookForAnalysis(
   candidates: AnalysisCandidateInput[],
@@ -91,13 +109,22 @@ export function selectNextBookForAnalysis(
 
   const eligible = candidates.filter((b) => isBookEligibleForAnalysis(b, opts));
 
-  const prioritized = sortByPriority(
-    eligible.map((b) => ({
-      bookId: b.bookId,
-      tier: classifyPriorityTier(b),
-      createdAt: b.createdAt,
-    })),
-  );
+  const toPrioritized = (books: AnalysisCandidateInput[]) =>
+    sortByPriority(
+      books.map((b) => ({
+        bookId: b.bookId,
+        tier: classifyPriorityTier(b),
+        createdAt: b.createdAt,
+      })),
+    );
 
-  return { bookId: prioritized[0]?.bookId ?? null, needsManualRetry };
+  const neverAnalyzedFirst = toPrioritized(
+    eligible.filter((b) => b.neverAnalyzed),
+  );
+  const staleBackfill = toPrioritized(eligible.filter((b) => !b.neverAnalyzed));
+
+  const bookId =
+    neverAnalyzedFirst[0]?.bookId ?? staleBackfill[0]?.bookId ?? null;
+
+  return { bookId, needsManualRetry };
 }

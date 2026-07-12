@@ -23,6 +23,7 @@ function candidate(
     pricingTier: "private_premium",
     lastJob: null,
     failedAttempts: 0,
+    neverAnalyzed: true,
     ...overrides,
   };
 }
@@ -228,5 +229,63 @@ describe("selectNextBookForAnalysis", () => {
     );
     expect(result.bookId).toBeNull();
     expect(result.needsManualRetry).toEqual([]);
+  });
+});
+
+describe("selectNextBookForAnalysis — never-analyzed vs stale-pipeline backfill", () => {
+  it("prefers a never-analyzed private book over a stale-pipeline catalog book", () => {
+    const result = selectNextBookForAnalysis(
+      [
+        candidate({
+          bookId: "stale-catalog",
+          catalogSource: "gutenberg:1",
+          neverAnalyzed: false,
+        }),
+        candidate({
+          bookId: "fresh-private",
+          visibility: "private",
+          neverAnalyzed: true,
+        }),
+      ],
+      DEFAULT_OPTS,
+    );
+    expect(result.bookId).toBe("fresh-private");
+  });
+
+  it("falls back to stale-pipeline backfill, tier/age ordered, once no never-analyzed candidates remain", () => {
+    const result = selectNextBookForAnalysis(
+      [
+        candidate({
+          bookId: "stale-private-newer",
+          visibility: "private",
+          neverAnalyzed: false,
+          createdAt: new Date("2026-07-05T00:00:00Z"),
+        }),
+        candidate({
+          bookId: "stale-catalog-older",
+          catalogSource: "gutenberg:1",
+          neverAnalyzed: false,
+          createdAt: new Date("2026-07-01T00:00:00Z"),
+        }),
+      ],
+      DEFAULT_OPTS,
+    );
+    expect(result.bookId).toBe("stale-catalog-older");
+  });
+
+  it("still honors cooldown/attempts-cap for a stale-pipeline backfill candidate", () => {
+    const fiveMinAgo = new Date(NOW.getTime() - 5 * 60 * 1000);
+    const result = selectNextBookForAnalysis(
+      [
+        candidate({
+          bookId: "stale-cooling",
+          neverAnalyzed: false,
+          lastJob: { status: "failed", updatedAt: fiveMinAgo },
+          failedAttempts: 1,
+        }),
+      ],
+      DEFAULT_OPTS,
+    );
+    expect(result.bookId).toBeNull();
   });
 });
