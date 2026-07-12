@@ -1,14 +1,18 @@
+import { gunzipSync } from "node:zlib";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { dbReady } from "@/db";
+import { MAX_CHUNKS } from "@/domain/book-format";
 import { requireUser } from "@/lib/auth";
 import { ApiError, handleApiError } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
 import {
+  createBookFromExtracted,
   createBookFromUpload,
   detectBookFormat,
   listBooks,
   toBookDto,
+  type PricingTier,
 } from "@/services/books";
 import { checkEntitlement } from "@/services/entitlements";
 
@@ -24,6 +28,49 @@ const metaSchema = z.object({
   rightsAttestation: z.enum(["public_domain", "owned_contributed"]).optional(),
 });
 
+// The primary upload path: the browser extracts the file to page-sized text
+// (src/components/shelf/extract-book.ts) and posts it as JSON. This keeps the
+// request body a fraction of the source size, sidestepping Vercel's 4.5MB
+// serverless body limit that made large PDFs fail.
+const extractedSchema = metaSchema.extend({
+  sourceFormat: z.enum(["pdf", "epub", "txt"]),
+  pages: z
+    .array(
+      z.object({
+        pageNum: z.number().int().nonnegative(),
+        text: z.string(),
+      }),
+    )
+    .min(1)
+    .max(MAX_CHUNKS),
+});
+
+/**
+ * Resolves + enforces the shared publish/visibility policy for both upload
+ * paths: publishing to the public library REQUIRES a rights attestation (the
+ * waiver that lets one analysis be shared across every reader — see CLAUDE.md
+ * "THE MODEL"), and this is the one place that invariant is enforced
+ * server-side. Also runs the entitlement/quota check (which protects the
+ * Gemini free-tier daily budget — every upload kicks off analysis LLM calls).
+ */
+async function resolveUploadPolicy(
+  userId: string,
+  visibility: "private" | "published",
+  rightsAttestation: "public_domain" | "owned_contributed" | undefined,
+): Promise<{ pricingTier: PricingTier }> {
+  if (visibility === "published" && !rightsAttestation) {
+    throw new ApiError(
+      400,
+      "attestation_required",
+      "Contributing to the public library requires a rights attestation — confirm the work is public domain, or that you own it and waive exclusive rights.",
+    );
+  }
+  const pricingTier: PricingTier =
+    visibility === "published" ? "public_subsidized" : "private_premium";
+  await checkEntitlement(userId, "upload", { pricingTier });
+  return { pricingTier };
+}
+
 export async function POST(req: NextRequest) {
   try {
     await dbReady;
@@ -31,6 +78,66 @@ export async function POST(req: NextRequest) {
 
     rateLimit(`user:${userId}:upload`, { windowSeconds: 600, max: 5 });
 
+    const contentType = req.headers.get("content-type") ?? "";
+
+    // --- Primary path: client-extracted text posted as JSON -----------------
+    // Sent either as plain application/json, or (for large books) gzipped and
+    // sent as application/octet-stream — the compressed body is a fraction of
+    // the size, keeping even a long novel comfortably under Vercel's 4.5MB
+    // serverless request-body limit.
+    const isGzipped = contentType.includes("application/octet-stream");
+    if (contentType.includes("application/json") || isGzipped) {
+      let payload: unknown;
+      try {
+        payload = isGzipped
+          ? JSON.parse(
+              gunzipSync(Buffer.from(await req.arrayBuffer())).toString(
+                "utf-8",
+              ),
+            )
+          : await req.json();
+      } catch {
+        throw new ApiError(
+          400,
+          "invalid_request",
+          "Malformed upload payload — the file may not have extracted cleanly. Try again.",
+        );
+      }
+
+      const parsed = extractedSchema.safeParse(payload);
+      if (!parsed.success) {
+        throw new ApiError(
+          400,
+          "invalid_request",
+          "Malformed upload payload — the file may not have extracted cleanly. Try again.",
+        );
+      }
+
+      const visibility = parsed.data.visibility ?? "private";
+      const { pricingTier } = await resolveUploadPolicy(
+        userId,
+        visibility,
+        parsed.data.rightsAttestation,
+      );
+
+      const book = await createBookFromExtracted({
+        ownerId: userId,
+        sourceFormat: parsed.data.sourceFormat,
+        title: parsed.data.title ?? null,
+        author: parsed.data.author ?? null,
+        pages: parsed.data.pages,
+        visibility,
+        pricingTier,
+        rightsAttestation: parsed.data.rightsAttestation ?? null,
+        contributedByUserId: visibility === "published" ? userId : null,
+      });
+
+      return NextResponse.json({ book: toBookDto(book) }, { status: 201 });
+    }
+
+    // --- Legacy path: raw file as multipart (small files / API callers) -----
+    // Subject to Vercel's 4.5MB serverless body limit — the browser uses the
+    // JSON path above for anything larger.
     const form = await req.formData();
     const file = form.get("file");
     if (!(file instanceof File)) {
@@ -46,9 +153,7 @@ export async function POST(req: NextRequest) {
     const buffer = new Uint8Array(await file.arrayBuffer());
 
     // Format is resolved from the extension + verified against the file's
-    // actual magic bytes/content — never the client-supplied MIME type
-    // alone (that's easy to spoof from a <input accept> bypass or a raw
-    // multipart request). Fail fast, before any DB/entitlement work.
+    // actual magic bytes/content — never the client-supplied MIME type alone.
     if (!detectBookFormat(file.name, buffer)) {
       throw new ApiError(
         400,
@@ -72,30 +177,11 @@ export async function POST(req: NextRequest) {
     }
 
     const visibility = parsed.data.visibility ?? "private";
-
-    // Publishing (contributing to the public library) REQUIRES a rights
-    // attestation — the waiver that lets the analysis be shared across
-    // every reader (see CLAUDE.md "THE MODEL"). Private uploads never need
-    // one. This is the one place that invariant is enforced server-side;
-    // never trust a client to only send 'published' when it also sent an
-    // attestation.
-    if (visibility === "published" && !parsed.data.rightsAttestation) {
-      throw new ApiError(
-        400,
-        "attestation_required",
-        "Contributing to the public library requires a rights attestation — confirm the work is public domain, or that you own it and waive exclusive rights.",
-      );
-    }
-
-    const pricingTier =
-      visibility === "published" ? "public_subsidized" : "private_premium";
-
-    // Also protects the Gemini free-tier daily quota — every upload kicks
-    // off the analysis pipeline's LLM calls (see ZERO-COST CONSTRAINT).
-    // Public contributions check against a separate, much larger allowance
-    // (subsidized — the cost is amortized across every reader) than
-    // private/premium uploads (see src/services/entitlements.ts).
-    await checkEntitlement(userId, "upload", { pricingTier });
+    const { pricingTier } = await resolveUploadPolicy(
+      userId,
+      visibility,
+      parsed.data.rightsAttestation,
+    );
 
     const book = await createBookFromUpload({
       ownerId: userId,

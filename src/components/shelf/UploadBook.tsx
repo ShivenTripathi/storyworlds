@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, type DragEvent } from "react";
+import { extractBookInBrowser, ExtractionError } from "./extract-book";
 import type { Book, ApiErrorBody } from "./types";
 
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -59,6 +60,42 @@ export function UploadBook({ onUploaded, variant = "tile" }: UploadBookProps) {
 type Contribution = "private" | "published";
 type Attestation = "public_domain" | "owned_contributed";
 
+// Above this JSON size, gzip the body before posting so a long novel's
+// extracted text stays well under Vercel's 4.5MB serverless body limit.
+const GZIP_THRESHOLD_BYTES = 1_000_000;
+
+/** Gzips a string with the browser's CompressionStream. */
+async function gzip(text: string): Promise<Blob> {
+  const stream = new Blob([text])
+    .stream()
+    .pipeThrough(new CompressionStream("gzip"));
+  return new Response(stream).blob();
+}
+
+/**
+ * Posts the extracted-book payload, gzipping it when large (and when the
+ * browser supports CompressionStream) to stay under the serverless body
+ * limit. Falls back to plain JSON otherwise.
+ */
+async function postUpload(body: unknown): Promise<Response> {
+  const json = JSON.stringify(body);
+  if (
+    json.length > GZIP_THRESHOLD_BYTES &&
+    typeof CompressionStream !== "undefined"
+  ) {
+    return fetch("/api/books", {
+      method: "POST",
+      headers: { "content-type": "application/octet-stream" },
+      body: await gzip(json),
+    });
+  }
+  return fetch("/api/books", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: json,
+  });
+}
+
 function UploadDialog({
   onClose,
   onUploaded,
@@ -70,6 +107,7 @@ function UploadDialog({
   const [title, setTitle] = useState("");
   const [author, setAuthor] = useState("");
   const [state, setState] = useState<UploadState>("idle");
+  const [phase, setPhase] = useState<"reading" | "binding">("reading");
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [contribution, setContribution] = useState<Contribution>("private");
@@ -109,22 +147,25 @@ function UploadDialog({
       setError("Choose which rights claim applies before contributing.");
       return;
     }
-    setState("uploading");
     setError(null);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      if (title.trim()) formData.append("title", title.trim());
-      if (author.trim()) formData.append("author", author.trim());
-      formData.append("visibility", contribution);
-      if (contribution === "published" && attestation) {
-        formData.append("rightsAttestation", attestation);
-      }
+      // Extract in the browser and post just the text. A large PDF's text is
+      // a fraction of the source file, so this stays under Vercel's 4.5MB
+      // serverless body limit that made big uploads fail.
+      setPhase("reading");
+      setState("uploading");
+      const extracted = await extractBookInBrowser(file);
 
-      const res = await fetch("/api/books", {
-        method: "POST",
-        body: formData,
+      setPhase("binding");
+      const res = await postUpload({
+        sourceFormat: extracted.sourceFormat,
+        title: title.trim() || extracted.title || undefined,
+        author: author.trim() || extracted.author || undefined,
+        pages: extracted.pages,
+        visibility: contribution,
+        rightsAttestation:
+          contribution === "published" && attestation ? attestation : undefined,
       });
 
       if (!res.ok) {
@@ -141,7 +182,9 @@ function UploadDialog({
     } catch (e) {
       setState("error");
       setError(
-        e instanceof Error ? e.message : "Upload failed. Please try again.",
+        e instanceof ExtractionError || e instanceof Error
+          ? e.message
+          : "Upload failed. Please try again.",
       );
     }
   }
@@ -337,7 +380,9 @@ function UploadDialog({
               <div className="h-full w-1/3 animate-[shimmer_1.2s_ease-in-out_infinite] rounded-full bg-[var(--primary)]" />
             </div>
             <p className="mt-2 font-ui text-xs text-muted-foreground">
-              Binding your book…
+              {phase === "reading"
+                ? "Reading your book in your browser…"
+                : "Binding your book…"}
             </p>
           </div>
         ) : null}

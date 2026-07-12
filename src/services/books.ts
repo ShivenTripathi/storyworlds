@@ -3,109 +3,29 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, chunks, purchases, readingProgress } from "@/db/schema";
 import { ApiError } from "@/lib/errors";
+import {
+  ACCEPTED_UPLOAD_EXTENSIONS,
+  chunkPlainText,
+  countWords,
+  decodeTextFile,
+  detectBookFormat,
+  MAX_CHUNKS,
+  titleFromFilename,
+  type BookSourceFormat,
+} from "@/domain/book-format";
 import { extractEpubText } from "@/services/epub";
 import { extractPdf, type PdfPage } from "@/services/pdf";
 import { storage } from "@/services/storage";
 
 const CHUNK_INSERT_BATCH_SIZE = 100;
 
-// ---------------------------------------------------------------------------
-// Upload format detection
-//
-// Format is a detail of extraction, not a parallel code path: the upload
-// route and createBookFromUpload both resolve a file to one of these three
-// via detectBookFormat before anything else happens. Never trust the
-// client-supplied MIME type alone — it's sniffed against magic bytes too.
-// ---------------------------------------------------------------------------
-
-export type BookSourceFormat = "pdf" | "epub" | "txt";
-
-const EXTENSION_FORMAT: Record<string, BookSourceFormat> = {
-  ".pdf": "pdf",
-  ".epub": "epub",
-  ".txt": "txt",
-};
-
-export const ACCEPTED_UPLOAD_EXTENSIONS = Object.keys(EXTENSION_FORMAT);
-
-function extensionOf(filename: string): string {
-  const idx = filename.lastIndexOf(".");
-  return idx === -1 ? "" : filename.slice(idx).toLowerCase();
-}
-
-/** True if `bytes` starts with the given byte sequence. */
-function startsWith(bytes: Uint8Array, sig: number[]): boolean {
-  if (bytes.length < sig.length) return false;
-  for (let i = 0; i < sig.length; i++) {
-    if (bytes[i] !== sig[i]) return false;
-  }
-  return true;
-}
-
-const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46]; // "%PDF"
-const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04]; // "PK\x03\x04"
-
-/**
- * Sniffs whether `data` looks like a well-formed EPUB zip: PK local-file-
- * header magic, and the near-mandatory first "mimetype" entry (stored
- * uncompressed, immediately after its header) spelling out
- * "application/epub+zip". This catches a renamed/spoofed non-EPUB zip
- * (e.g. a .docx) without paying for a full unzip.
- */
-function looksLikeEpub(data: Uint8Array): boolean {
-  if (!startsWith(data, ZIP_MAGIC)) return false;
-  const head = new TextDecoder("latin1").decode(data.subarray(0, 256));
-  return head.includes("mimetype") && head.includes("application/epub+zip");
-}
-
-/**
- * True if `data` looks like a decodable, non-binary text file: valid UTF-8
- * and no embedded NUL bytes in a reasonably-sized prefix (a strong signal
- * of a binary format masquerading as .txt).
- */
-function looksLikePlainText(data: Uint8Array): boolean {
-  const prefix = data.subarray(0, 8000);
-  if (prefix.includes(0)) return false;
-  try {
-    new TextDecoder("utf-8", { fatal: true }).decode(prefix);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Resolves an uploaded file to a supported format by extension, then
- * verifies the claim against the file's actual magic bytes/content — never
- * trusts extension or client MIME type alone. Returns null (reject) for
- * unsupported extensions or a mismatch (e.g. a renamed non-PDF claiming
- * `.pdf`).
- */
-export function detectBookFormat(
-  filename: string,
-  data: Uint8Array,
-): BookSourceFormat | null {
-  const format = EXTENSION_FORMAT[extensionOf(filename)];
-  if (!format) return null;
-
-  if (format === "pdf" && !startsWith(data, PDF_MAGIC)) return null;
-  if (format === "epub" && !looksLikeEpub(data)) return null;
-  if (format === "txt" && !looksLikePlainText(data)) return null;
-
-  return format;
-}
-
-/** Decodes an uploaded .txt file as UTF-8, stripping a leading BOM. */
-function decodeTextFile(data: Uint8Array): string {
-  const text = new TextDecoder("utf-8").decode(data);
-  return text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-}
-
-/** Strips a known upload extension for a filename-derived default title. */
-function titleFromFilename(filename: string): string {
-  const ext = extensionOf(filename);
-  return ext ? filename.slice(0, -ext.length) : filename;
-}
+// Format detection + text chunking are pure and now live in the domain layer
+// (src/domain/book-format.ts) so the browser can run them too — the upload
+// UI extracts client-side and posts already-extracted text, sidestepping
+// Vercel's 4.5MB serverless request-body limit. Re-exported here for the
+// server-side callers (upload route, catalog ingestion) that already import
+// them from this module.
+export { ACCEPTED_UPLOAD_EXTENSIONS, detectBookFormat, type BookSourceFormat };
 
 /**
  * Visibility/monetization model (see CLAUDE.md "THE MODEL"):
@@ -270,75 +190,123 @@ export async function createBookFromUpload({
   }
 }
 
-const CHUNK_TARGET_CHARS = 1800;
-const CHUNK_HARD_MAX_CHARS = 3000;
-
-function countWords(text: string): number {
-  const trimmed = text.trim();
-  if (!trimmed) return 0;
-  return trimmed.split(/\s+/).length;
+/** A single extracted page as posted by the client-side extractor. */
+export interface ExtractedPage {
+  pageNum: number;
+  text: string;
 }
 
-/** Hard-wraps a single oversized paragraph on whitespace boundaries near `maxChars`. */
-function hardWrapParagraph(paragraph: string, maxChars: number): string[] {
-  const pieces: string[] = [];
-  let rest = paragraph;
-  while (rest.length > maxChars) {
-    let splitAt = rest.lastIndexOf(" ", maxChars);
-    if (splitAt <= 0) splitAt = maxChars;
-    pieces.push(rest.slice(0, splitAt).trim());
-    rest = rest.slice(splitAt).trim();
-  }
-  if (rest) pieces.push(rest);
-  return pieces;
+export interface CreateBookFromExtractedInput {
+  ownerId: string;
+  /** Detected + client-extracted; the server re-validates count/size, not bytes. */
+  sourceFormat: BookSourceFormat;
+  title?: string | null;
+  author?: string | null;
+  /** Already-extracted, page-sized text. Extraction ran in the browser to
+   * keep the request body under Vercel's 4.5MB serverless limit. */
+  pages: ExtractedPage[];
+  visibility?: "private" | "published";
+  pricingTier?: PricingTier;
+  rightsAttestation?: RightsAttestation | null;
+  contributedByUserId?: string | null;
 }
+
+/** Per-page text ceiling — a generous multiple of the chunker's hard max;
+ * guards against a client posting a few enormous pages to blow up storage. */
+const MAX_PAGE_CHARS = 20_000;
 
 /**
- * Splits plain text into page-sized chunks on paragraph (blank-line)
- * boundaries, greedily packing paragraphs up to ~CHUNK_TARGET_CHARS. A
- * paragraph is never split unless it alone exceeds CHUNK_HARD_MAX_CHARS, in
- * which case it's hard-wrapped on whitespace.
+ * Creates a book (+ chunk rows) from text the CLIENT already extracted, with
+ * no server-side PDF/EPUB parsing and no stored source blob. This is the
+ * primary upload path: the browser extracts a PDF/EPUB/TXT to page-sized
+ * text and posts it as a small JSON body, which sidesteps Vercel's 4.5MB
+ * serverless request-body limit (a large PDF's text is a fraction of the
+ * source file) and offloads extraction CPU from the timeout-bound function.
+ *
+ * The posted text is untrusted input treated exactly like catalog text — it
+ * only ever becomes chunk rows, never executed — so the server re-validates
+ * shape (non-empty, chunk count ≤ MAX_CHUNKS, per-page size) and re-derives
+ * word counts rather than trusting client-supplied numbers.
  */
-export function chunkPlainText(text: string): string[] {
-  const paragraphs = text
-    .split(/\n{2,}/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
+export async function createBookFromExtracted({
+  ownerId,
+  sourceFormat,
+  title,
+  author,
+  pages: rawPages,
+  visibility = "private",
+  pricingTier = visibility === "published"
+    ? "public_subsidized"
+    : "private_premium",
+  rightsAttestation = null,
+  contributedByUserId = null,
+}: CreateBookFromExtractedInput) {
+  await dbReady;
 
-  const pages: string[] = [];
-  let current: string[] = [];
-  let currentLength = 0;
+  const pages = rawPages
+    .map((p) => ({ pageNum: p.pageNum, text: (p.text ?? "").trim() }))
+    .filter((p) => p.text.length > 0);
 
-  const flush = () => {
-    if (current.length === 0) return;
-    pages.push(current.join("\n\n"));
-    current = [];
-    currentLength = 0;
-  };
-
-  for (const paragraph of paragraphs) {
-    if (paragraph.length > CHUNK_HARD_MAX_CHARS) {
-      flush();
-      for (const piece of hardWrapParagraph(paragraph, CHUNK_HARD_MAX_CHARS)) {
-        pages.push(piece);
-      }
-      continue;
-    }
-
-    if (
-      current.length > 0 &&
-      currentLength + paragraph.length > CHUNK_TARGET_CHARS
-    ) {
-      flush();
-    }
-
-    current.push(paragraph);
-    currentLength += paragraph.length;
+  if (pages.length === 0) {
+    throw new ApiError(
+      400,
+      "invalid_request",
+      "We couldn't read any text from that file. If it's a scanned PDF (images only), it has no selectable text to extract.",
+    );
+  }
+  if (pages.length > MAX_CHUNKS) {
+    throw new ApiError(
+      400,
+      "invalid_request",
+      `That book is too long to bind (${pages.length} pages; the limit is ${MAX_CHUNKS}).`,
+    );
+  }
+  if (pages.some((p) => p.text.length > MAX_PAGE_CHARS)) {
+    throw new ApiError(
+      400,
+      "invalid_request",
+      "That file's pages are unexpectedly large — it may not have extracted cleanly. Try a different export.",
+    );
   }
 
-  flush();
+  const withCounts = pages.map((p, i) => ({
+    pageNum: i + 1,
+    text: p.text,
+    wordCount: countWords(p.text),
+  }));
+  const totalWords = withCounts.reduce((sum, p) => sum + p.wordCount, 0);
 
-  return pages;
+  const [book] = await db
+    .insert(books)
+    .values({
+      ownerId,
+      sourceFormat,
+      title: title?.trim() || "Untitled",
+      author: author?.trim() || null,
+      status: "ready",
+      totalChunks: withCounts.length,
+      totalWords,
+      visibility,
+      pricingTier,
+      rightsAttestation,
+      contributedByUserId,
+    })
+    .returning();
+
+  for (let i = 0; i < withCounts.length; i += CHUNK_INSERT_BATCH_SIZE) {
+    const batch = withCounts
+      .slice(i, i + CHUNK_INSERT_BATCH_SIZE)
+      .map((page, j) => ({
+        bookId: book.id,
+        idx: i + j,
+        pageNumber: page.pageNum,
+        wordCount: page.wordCount,
+        text: page.text,
+      }));
+    await db.insert(chunks).values(batch);
+  }
+
+  return book;
 }
 
 export interface CreateBookFromTextInput {

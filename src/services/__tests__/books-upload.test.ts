@@ -52,10 +52,10 @@ vi.mock("@/services/storage", () => ({
 import { db, dbReady } from "@/db";
 import { chunks, users } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { chunkPlainText, detectBookFormat } from "@/domain/book-format";
 import {
-  chunkPlainText,
+  createBookFromExtracted,
   createBookFromUpload,
-  detectBookFormat,
 } from "@/services/books";
 
 const OWNER = "user_upload_test";
@@ -253,5 +253,79 @@ describe("createBookFromUpload", () => {
 
     expect(book.status).toBe("failed");
     expect(book.sourceFormat).toBe("epub");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// createBookFromExtracted — the primary path: the browser extracts a file to
+// page text and posts it (no server-side parsing, no stored source blob),
+// sidestepping Vercel's 4.5MB serverless request-body limit.
+// ---------------------------------------------------------------------------
+describe("createBookFromExtracted", () => {
+  it("creates a ready book from already-extracted pages, re-deriving word counts", async () => {
+    const book = await createBookFromExtracted({
+      ownerId: OWNER,
+      sourceFormat: "pdf",
+      title: "Extracted Novel",
+      author: "A. Writer",
+      pages: [
+        { pageNum: 1, text: "The first page, four words here." },
+        { pageNum: 2, text: "Second page prose." },
+      ],
+    });
+
+    expect(book.status).toBe("ready");
+    expect(book.sourceFormat).toBe("pdf");
+    expect(book.title).toBe("Extracted Novel");
+    expect(book.author).toBe("A. Writer");
+    expect(book.totalChunks).toBe(2);
+    expect(book.totalWords).toBe(9);
+
+    const rows = await db
+      .select()
+      .from(chunks)
+      .where(eq(chunks.bookId, book.id));
+    expect(rows).toHaveLength(2);
+    expect(rows[0].text).toContain("first page");
+    // No source blob is stored on this path.
+    expect(book.sourceKey ?? null).toBeNull();
+  });
+
+  it("drops blank pages and re-numbers sequentially", async () => {
+    const book = await createBookFromExtracted({
+      ownerId: OWNER,
+      sourceFormat: "pdf",
+      pages: [
+        { pageNum: 1, text: "Real content." },
+        { pageNum: 2, text: "   " },
+        { pageNum: 3, text: "More content." },
+      ],
+    });
+
+    expect(book.totalChunks).toBe(2);
+    const rows = await db
+      .select()
+      .from(chunks)
+      .where(eq(chunks.bookId, book.id));
+    expect(rows.map((r) => r.pageNumber)).toEqual([1, 2]);
+  });
+
+  it("defaults an untitled upload to 'Untitled'", async () => {
+    const book = await createBookFromExtracted({
+      ownerId: OWNER,
+      sourceFormat: "txt",
+      pages: [{ pageNum: 1, text: "Body." }],
+    });
+    expect(book.title).toBe("Untitled");
+  });
+
+  it("rejects an empty extraction (e.g. a scanned, image-only PDF)", async () => {
+    await expect(
+      createBookFromExtracted({
+        ownerId: OWNER,
+        sourceFormat: "pdf",
+        pages: [{ pageNum: 1, text: "   " }],
+      }),
+    ).rejects.toMatchObject({ status: 400 });
   });
 });
