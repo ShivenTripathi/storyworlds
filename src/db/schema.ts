@@ -1,6 +1,7 @@
 import {
   bigserial,
   customType,
+  date,
   foreignKey,
   index,
   integer,
@@ -309,6 +310,29 @@ export const readingProgress = pgTable(
       .notNull(),
   },
   (table) => [primaryKey({ columns: [table.userId, table.bookId] })],
+);
+
+// ---------------------------------------------------------------------------
+// readingActivity — per-user-per-day rollup (NOT per-event) powering the
+// GitHub-contribution-style reading heatmap + streaks (src/domain/streak.ts,
+// src/services/analytics.ts getReadingActivity). `day` is a UTC calendar day
+// stored as a plain date string ('YYYY-MM-DD', mode: 'string') so streak/
+// heatmap math never has to fight Postgres `date` <-> JS `Date` timezone
+// coercion. Composite primary key (userId, day) IS the "unique per user per
+// day" constraint — same pattern as `readingProgress` above — so an upsert
+// targets [userId, day] and increments `wordsRead` (see
+// src/services/books.ts recordReadingActivity).
+// ---------------------------------------------------------------------------
+export const readingActivity = pgTable(
+  "reading_activity",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id),
+    day: date("day", { mode: "string" }).notNull(),
+    wordsRead: integer("words_read").default(0).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.day] })],
 );
 
 // ---------------------------------------------------------------------------

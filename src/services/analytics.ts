@@ -21,6 +21,7 @@ import {
   entities,
   images,
   overlays,
+  readingActivity,
   readingProgress,
   usageEvents,
   worldReferences,
@@ -32,6 +33,7 @@ import {
   type Rarity,
 } from "@/domain/codex";
 import { pageToChunkIdx } from "@/domain/schemas";
+import { addUtcDays, computeStreaks, utcDayString } from "@/domain/streak";
 import { storage } from "@/services/storage";
 
 function startOfUtcDay(d: Date): Date {
@@ -1060,4 +1062,85 @@ export async function getCollectionOverview(
       progressPercent,
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// getReadingActivity — the contribution-style heatmap + streaks
+// ---------------------------------------------------------------------------
+
+/** Weeks shown in the GitHub-contribution-style heatmap grid. */
+const HEATMAP_WEEKS = 53;
+
+export interface ReadingActivityDay {
+  /** UTC calendar day, 'YYYY-MM-DD'. */
+  day: string;
+  wordsRead: number;
+}
+
+export interface ReadingActivityDto {
+  /** The last ~53 weeks (371 days), oldest first, gap-filled with
+   * wordsRead: 0 for any day with no activity — ready to lay out as a
+   * 53-week x 7-day grid with no client-side date math beyond weekday
+   * alignment. */
+  days: ReadingActivityDay[];
+  /** Consecutive UTC days with activity, ending today or yesterday (see
+   * src/domain/streak.ts computeStreaks). */
+  currentStreakDays: number;
+  /** Longest streak across the caller's ENTIRE activity history, not just
+   * the visible 53-week window. */
+  longestStreakDays: number;
+  /** Distinct active days across the caller's entire history. */
+  activeDays: number;
+  /** Sum of wordsRead for the current calendar year (always fully covered
+   * by the single history query below, since a year is at most 366 days and
+   * the window this is drawn from is the caller's whole history). */
+  totalWordsThisYear: number;
+}
+
+/**
+ * The reading heatmap + streak stats for one caller (strictly their own
+ * `reading_activity` rows — see src/services/books.ts recordReadingActivity
+ * for how rows get written). ONE query fetches the caller's entire activity
+ * history (bounded by their own active-day count, not book length or global
+ * data), which feeds both the true all-time streak computation and the
+ * gap-filled 53-week display window — no per-day query loop.
+ */
+export async function getReadingActivity(
+  userId: string,
+): Promise<ReadingActivityDto> {
+  await dbReady;
+
+  const rows = await db
+    .select({ day: readingActivity.day, wordsRead: readingActivity.wordsRead })
+    .from(readingActivity)
+    .where(eq(readingActivity.userId, userId))
+    .orderBy(asc(readingActivity.day));
+
+  const byDay = new Map(rows.map((r) => [r.day, r.wordsRead ?? 0]));
+
+  const todayIso = utcDayString();
+  const startIso = addUtcDays(todayIso, -(HEATMAP_WEEKS * 7 - 1));
+  const days: ReadingActivityDay[] = [];
+  for (let i = 0; i < HEATMAP_WEEKS * 7; i++) {
+    const day = addUtcDays(startIso, i);
+    days.push({ day, wordsRead: byDay.get(day) ?? 0 });
+  }
+
+  const { currentStreakDays, longestStreakDays, activeDays } = computeStreaks(
+    rows.map((r) => ({ day: r.day, wordsRead: r.wordsRead ?? 0 })),
+    todayIso,
+  );
+
+  const yearStartIso = `${new Date().getUTCFullYear()}-01-01`;
+  const totalWordsThisYear = rows
+    .filter((r) => r.day >= yearStartIso)
+    .reduce((sum, r) => sum + (r.wordsRead ?? 0), 0);
+
+  return {
+    days,
+    currentStreakDays,
+    longestStreakDays,
+    activeDays,
+    totalWordsThisYear,
+  };
 }

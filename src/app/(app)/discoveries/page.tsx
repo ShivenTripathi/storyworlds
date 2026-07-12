@@ -1,4 +1,5 @@
 import { ReaderDashboard } from "@/components/analytics/ReaderDashboard";
+import { ReadingHeatmap } from "@/components/analytics/ReadingHeatmap";
 import { CollectionOverview } from "@/components/analytics/CollectionOverview";
 
 export default function DiscoveriesPage() {
@@ -15,6 +16,7 @@ export default function DiscoveriesPage() {
         </p>
       </div>
 
+      <ReadingHeatmap className="mb-10" />
       <ReaderDashboard className="mb-14" />
       <CollectionOverview />
     </div>

@@ -1,7 +1,25 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, ilike, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gte,
+  ilike,
+  isNull,
+  lte,
+  or,
+  sql,
+} from "drizzle-orm";
 import { db, dbReady } from "@/db";
-import { books, chunks, purchases, readingProgress } from "@/db/schema";
+import {
+  achievements,
+  books,
+  chunks,
+  purchases,
+  readingActivity,
+  readingProgress,
+} from "@/db/schema";
 import { ApiError } from "@/lib/errors";
 import {
   ACCEPTED_UPLOAD_EXTENSIONS,
@@ -13,6 +31,11 @@ import {
   titleFromFilename,
   type BookSourceFormat,
 } from "@/domain/book-format";
+import {
+  computeStreaks,
+  forwardReadRange,
+  utcDayString,
+} from "@/domain/streak";
 import { extractEpubText } from "@/services/epub";
 import { extractPdf, type PdfPage } from "@/services/pdf";
 import { storage } from "@/services/storage";
@@ -758,9 +781,110 @@ export async function getChunkTexts(
 }
 
 /**
+ * Milestones that unlock a `streak_N` achievement (schema.ts achievements
+ * kind comment lists 'streak_7' as the canonical example). Checked once per
+ * calendar day per user (see recordReadingActivity) — cheap and secondary,
+ * never blocks progress saving on failure.
+ */
+const STREAK_ACHIEVEMENT_MILESTONES = [7, 30];
+
+/**
+ * Unlocks a `streak_{n}` achievement the first time the caller's current
+ * streak crosses a milestone. Account-level (bookId/refId both null) —
+ * Postgres treats NULLs as distinct in the unique index (see the schema
+ * comment on `achievements`), so this dedupes with an explicit existence
+ * check rather than relying on onConflictDoNothing.
+ */
+async function maybeUnlockStreakAchievement(userId: string): Promise<void> {
+  const rows = await db
+    .select({ day: readingActivity.day, wordsRead: readingActivity.wordsRead })
+    .from(readingActivity)
+    .where(eq(readingActivity.userId, userId))
+    .orderBy(asc(readingActivity.day));
+
+  const { currentStreakDays } = computeStreaks(
+    rows.map((r) => ({ day: r.day, wordsRead: r.wordsRead ?? 0 })),
+  );
+  if (!STREAK_ACHIEVEMENT_MILESTONES.includes(currentStreakDays)) return;
+
+  const kind = `streak_${currentStreakDays}`;
+  const [existing] = await db
+    .select({ id: achievements.id })
+    .from(achievements)
+    .where(
+      and(
+        eq(achievements.userId, userId),
+        eq(achievements.kind, kind),
+        isNull(achievements.bookId),
+        isNull(achievements.refId),
+      ),
+    )
+    .limit(1);
+  if (existing) return;
+
+  await db.insert(achievements).values({ userId, kind });
+}
+
+/**
+ * Records forward-only reading activity for the heatmap/streaks (src/domain/
+ * streak.ts, src/services/analytics.ts getReadingActivity): sums the
+ * wordCount of chunks newly brought into the frontier (fromIdx..toIdx) via
+ * one aggregate query, then upserts today's (UTC) `reading_activity` row,
+ * incrementing wordsRead rather than overwriting it (a reader may advance
+ * their frontier more than once in a day). Cheap: one aggregate SELECT +
+ * one upsert, regardless of book length. The streak-achievement check only
+ * runs on a user's FIRST activity write of a new UTC day (existingToday is
+ * null), so it doesn't re-scan the caller's whole activity history on every
+ * page turn.
+ */
+async function recordReadingActivity(
+  userId: string,
+  bookId: string,
+  fromIdx: number,
+  toIdx: number,
+): Promise<void> {
+  if (toIdx < fromIdx) return;
+
+  const [{ words }] = await db
+    .select({ words: sql<number>`coalesce(sum(${chunks.wordCount}), 0)::int` })
+    .from(chunks)
+    .where(
+      and(
+        eq(chunks.bookId, bookId),
+        gte(chunks.idx, fromIdx),
+        lte(chunks.idx, toIdx),
+      ),
+    );
+  if (!words) return;
+
+  const day = utcDayString();
+  const [existingToday] = await db
+    .select({ userId: readingActivity.userId })
+    .from(readingActivity)
+    .where(
+      and(eq(readingActivity.userId, userId), eq(readingActivity.day, day)),
+    )
+    .limit(1);
+
+  await db
+    .insert(readingActivity)
+    .values({ userId, day, wordsRead: words })
+    .onConflictDoUpdate({
+      target: [readingActivity.userId, readingActivity.day],
+      set: { wordsRead: sql`${readingActivity.wordsRead} + ${words}` },
+    });
+
+  if (!existingToday) {
+    await maybeUnlockStreakAchievement(userId);
+  }
+}
+
+/**
  * Upserts reading progress for a user/book, always keeping frontierChunk as
  * the max of its current value and the new currentChunk (spoiler gate never
- * moves backward).
+ * moves backward). Also records reading-activity instrumentation for the
+ * heatmap/streaks — best-effort: a failure there is caught and logged, never
+ * allowed to fail the progress save itself.
  */
 export async function updateProgress(
   userId: string,
@@ -789,6 +913,21 @@ export async function updateProgress(
       ? currentChunk
       : Math.max(currentChunk, Math.min(Math.max(0, frontierChunk), maxChunk));
 
+  // Read the PRIOR frontier before upserting, so the forward-only word delta
+  // below is computed from "what's newly read", not "everything up to the
+  // new frontier" (which would double-count on every subsequent save).
+  const [priorRow] = await db
+    .select({ frontierChunk: readingProgress.frontierChunk })
+    .from(readingProgress)
+    .where(
+      and(
+        eq(readingProgress.userId, userId),
+        eq(readingProgress.bookId, bookId),
+      ),
+    )
+    .limit(1);
+  const priorFrontier = priorRow?.frontierChunk ?? -1; // -1: chunk 0 counts as new
+
   const [row] = await db
     .insert(readingProgress)
     .values({ userId, bookId, currentChunk, frontierChunk: reportedFrontier })
@@ -801,6 +940,19 @@ export async function updateProgress(
       },
     })
     .returning();
+
+  const newFrontier = row.frontierChunk ?? reportedFrontier;
+  const range = forwardReadRange(priorFrontier, newFrontier);
+  if (range) {
+    try {
+      await recordReadingActivity(userId, bookId, range.fromIdx, range.toIdx);
+    } catch (err) {
+      console.error(
+        `[books] reading-activity instrumentation failed for user ${userId} / book ${bookId}:`,
+        err,
+      );
+    }
+  }
 
   return row;
 }
