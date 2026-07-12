@@ -1,4 +1,4 @@
-import { and, isNull, ne, or, eq, inArray, sql } from "drizzle-orm";
+import { and, isNull, lt, ne, or, eq, inArray, sql } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, jobs, worldReferences } from "@/db/schema";
 import {
@@ -35,8 +35,16 @@ const MAX_ANALYSIS_ATTEMPTS = 3;
 export type SweepAnalysisResult =
   | { skipped: "low_headroom"; headroomPct: number }
   | { skipped: "readers_active" }
+  | { skipped: "analysis_in_flight" }
   | { skipped: "none_eligible"; needsManualRetry: string[] }
   | { enqueued: string; jobId: string };
+
+// A 'running' analyze job that hasn't advanced its progress in this long has
+// stalled (e.g. the Gemini free tier 429'd it into a dead retry loop) — mark
+// it failed so it stops blocking the global-serialize gate below and can be
+// retried later. A 'queued' job never picked up in this long is likewise dead.
+const RUNNING_STALL_MS = 15 * 60 * 1000;
+const QUEUED_STALL_MS = 10 * 60 * 1000;
 
 /**
  * Loads every book that still needs analysis, each annotated with its most
@@ -142,6 +150,49 @@ async function loadAnalysisCandidates(): Promise<AnalysisCandidateInput[]> {
  */
 export async function sweepAnalysisOnce(): Promise<SweepAnalysisResult> {
   await dbReady;
+
+  // Reclaim stalled jobs first (always — even when readers are active) so dead
+  // 'running' zombies from a prior overload don't block the pipe forever.
+  const now = Date.now();
+  await db
+    .update(jobs)
+    .set({ status: "failed", error: "Reclaimed: stalled with no progress." })
+    .where(
+      and(
+        eq(jobs.kind, "analyze_book"),
+        or(
+          and(
+            eq(jobs.status, "running"),
+            lt(jobs.updatedAt, new Date(now - RUNNING_STALL_MS)),
+          ),
+          and(
+            eq(jobs.status, "queued"),
+            lt(jobs.updatedAt, new Date(now - QUEUED_STALL_MS)),
+          ),
+        ),
+      ),
+    );
+
+  // GLOBAL SERIALIZE — the critical fix. Inngest's own concurrency:1 proved
+  // unreliable under load (functions release the concurrency slot during their
+  // retry-backoff sleeps, so a backlog of runs cycled CONCURRENTLY and slammed
+  // the 15-request/minute free-tier cap → a 429 storm that also starved
+  // interactive chat). Enforce it at the DB level: never enqueue a new
+  // analysis while ANY analyze_book is queued or running, so exactly one runs
+  // at a time and stays under the rate limit.
+  const [inFlight] = await db
+    .select({ id: jobs.id })
+    .from(jobs)
+    .where(
+      and(
+        eq(jobs.kind, "analyze_book"),
+        inArray(jobs.status, ["queued", "running"]),
+      ),
+    )
+    .limit(1);
+  if (inFlight) {
+    return { skipped: "analysis_in_flight" };
+  }
 
   if (await isReaderActive()) {
     return { skipped: "readers_active" };

@@ -48,7 +48,11 @@ export type StepRunner = <T>(name: string, fn: () => Promise<T>) => Promise<T>;
 const defaultStepRunner: StepRunner = (_name, fn) => fn();
 
 const MAX_STORED_STRING = 500;
-const SEGMENT_CONCURRENCY = 3;
+// Fan-out within ONE analysis. Kept to 2 (not 3) so a single running analysis
+// leaves clear room under the 15-request/minute Gemini free-tier cap for
+// interactive chat / on-read illustrations (with the global-serialize in
+// sweep-analysis ensuring only one analysis runs at a time).
+const SEGMENT_CONCURRENCY = 2;
 
 /**
  * Bumped whenever a change to this pipeline (segment/synthesis prompts,
@@ -428,12 +432,15 @@ export async function runAnalysis(
 export const analyzeBook = inngest.createFunction(
   {
     id: "analyze-book",
-    // ZERO-COST CONSTRAINT (see CLAUDE.md): keep total concurrent Gemini calls
-    // ≤3 on the free tier. Each analyze run fans out to SEGMENT_CONCURRENCY (3)
-    // parallel segment calls, so the function itself must run ONE book at a
-    // time — concurrency:3 here meant 3×3 = 9 concurrent calls and blew the
-    // free-tier ceiling (→ 429s).
+    // ZERO-COST CONSTRAINT (see CLAUDE.md): keep concurrent Gemini calls low on
+    // the free tier. Each run fans out to SEGMENT_CONCURRENCY (2) parallel
+    // calls; the DB-level global-serialize in sweep-analysis.ts is the real
+    // guarantee that only one analysis runs at a time (Inngest's concurrency:1
+    // alone leaked under load — runs release the slot during retry backoff).
     concurrency: 1,
+    // Don't burn the scarce daily quota re-retrying a doomed run — the sweeper
+    // already retries failed books after a 30-min cooldown (up to 3 attempts).
+    retries: 1,
     triggers: [{ event: "book/analyze.requested" }],
     onFailure: async ({ event, error }) => {
       const jobId = (event.data as { event?: { data?: { jobId?: string } } })
