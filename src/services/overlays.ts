@@ -1,10 +1,21 @@
 import { and, desc, eq, inArray, lte } from "drizzle-orm";
 import { completeJson } from "@/ai/client";
+import { canSpend } from "@/services/quota";
 import { generateSceneImage } from "@/ai/image";
 import { assertBudget } from "@/ai/budget";
-import { buildOverlayPrompt, OVERLAY_SYSTEM_PROMPT, type OverlayWorldContext } from "@/ai/prompts/overlay";
+import {
+  buildOverlayPrompt,
+  OVERLAY_SYSTEM_PROMPT,
+  type OverlayWorldContext,
+} from "@/ai/prompts/overlay";
 import { db, dbReady } from "@/db";
-import { entities, entityAliases, images, overlays, worldReferences } from "@/db/schema";
+import {
+  entities,
+  entityAliases,
+  images,
+  overlays,
+  worldReferences,
+} from "@/db/schema";
 import { buildAliasIndex, resolveEntityName } from "@/domain/entities/resolve";
 import { OverlaySchema } from "@/domain/schemas";
 import { env } from "@/lib/env";
@@ -33,7 +44,10 @@ type LockResult =
   | { kind: "ready"; row: OverlayRow }
   | { kind: "pending" };
 
-async function acquireLock(bookId: string, chunkIdx: number): Promise<LockResult> {
+async function acquireLock(
+  bookId: string,
+  chunkIdx: number,
+): Promise<LockResult> {
   const [inserted] = await db
     .insert(overlays)
     .values({ bookId, chunkIdx, status: "generating" })
@@ -75,7 +89,9 @@ async function acquireLock(bookId: string, chunkIdx: number): Promise<LockResult
 function formatVisualStyle(visualStyle: unknown): string {
   if (!visualStyle || typeof visualStyle !== "object") return "";
   const v = visualStyle as Record<string, unknown>;
-  return [v.artStyle, v.colorPalette, v.mood, v.eraSetting].filter(Boolean).join(", ");
+  return [v.artStyle, v.colorPalette, v.mood, v.eraSetting]
+    .filter(Boolean)
+    .join(", ");
 }
 
 /**
@@ -95,6 +111,26 @@ export async function generateOverlayCore(
   if (lock.kind === "ready") return lock.row;
   if (lock.kind === "pending") return null;
 
+  // Quota gate (src/services/quota.ts) — AFTER the lock check so reading an
+  // already-generated overlay is never blocked; only fresh generation spends.
+  // On-read calls carry a userId (interactive, reserved slice); the
+  // background prefetch/sweep doesn't. When blocked, release the lock row so
+  // a later attempt can generate cleanly, and report "pending" — the client
+  // already treats that as "try again shortly".
+  const kind = opts.userId ? ("interactive" as const) : ("background" as const);
+  if (!(await canSpend(kind))) {
+    await db
+      .delete(overlays)
+      .where(
+        and(
+          eq(overlays.bookId, bookId),
+          eq(overlays.chunkIdx, chunkIdx),
+          eq(overlays.status, "generating"),
+        ),
+      );
+    return null;
+  }
+
   try {
     await assertBudget(bookId);
 
@@ -109,7 +145,10 @@ export async function generateOverlayCore(
       .where(eq(worldReferences.bookId, bookId))
       .limit(1);
 
-    const entityRows = await db.select().from(entities).where(eq(entities.bookId, bookId));
+    const entityRows = await db
+      .select()
+      .from(entities)
+      .where(eq(entities.bookId, bookId));
     const aliasRows = await db
       .select()
       .from(entityAliases)
@@ -145,7 +184,10 @@ export async function generateOverlayCore(
           resolvedIds.push(result.entityId);
         }
       } else {
-        unresolvedMentions.push({ name: result.unresolved, reason: result.reason });
+        unresolvedMentions.push({
+          name: result.unresolved,
+          reason: result.reason,
+        });
       }
     }
 
@@ -157,7 +199,12 @@ export async function generateOverlayCore(
         const rows = await db
           .select({ visualDescription: entities.visualDescription })
           .from(entities)
-          .where(and(eq(entities.bookId, bookId), inArray(entities.id, topEntityIds)));
+          .where(
+            and(
+              eq(entities.bookId, bookId),
+              inArray(entities.id, topEntityIds),
+            ),
+          );
         visualDescriptions = rows
           .map((r) => r.visualDescription)
           .filter((d): d is string => Boolean(d));
@@ -171,7 +218,10 @@ export async function generateOverlayCore(
         .filter(Boolean)
         .join(". ");
 
-      const image = await generateSceneImage(imagePrompt, { bookId, userId: opts.userId });
+      const image = await generateSceneImage(imagePrompt, {
+        bookId,
+        userId: opts.userId,
+      });
       if (image) {
         const storageKey = `books/${bookId}/images/${chunkIdx}.img`;
         await storage.put(storageKey, image.data, image.contentType);
@@ -195,7 +245,10 @@ export async function generateOverlayCore(
         status: "ready",
         activeEntityIds: resolvedIds,
         unresolvedMentions,
-        interpretiveLens: { notes: overlay.interpretiveNotes ?? null, mood: overlay.mood ?? null },
+        interpretiveLens: {
+          notes: overlay.interpretiveNotes ?? null,
+          mood: overlay.mood ?? null,
+        },
         sceneDescription: overlay.sceneDescription,
         suggestedQuestions: overlay.suggestedQuestions,
         imageId,
@@ -243,7 +296,9 @@ export async function getOrGenerateOverlay(
   const row = await generateOverlayCore(bookId, chunkIdx, { userId });
   if (!row) return { pending: true };
 
-  const activeIds = Array.isArray(row.activeEntityIds) ? (row.activeEntityIds as string[]) : [];
+  const activeIds = Array.isArray(row.activeEntityIds)
+    ? (row.activeEntityIds as string[])
+    : [];
   let activeEntities: { id: string; name: string; kind: string }[] = [];
   if (activeIds.length > 0) {
     // No frontier filter here (unlike getWorldForReader): these are entities
@@ -295,7 +350,10 @@ export async function getOrGenerateOverlay(
  * — a failed prefetch request just means the reader falls back to on-demand
  * (synchronous) generation for those pages.
  */
-export async function requestPrefetch(bookId: string, fromIdx: number): Promise<void> {
+export async function requestPrefetch(
+  bookId: string,
+  fromIdx: number,
+): Promise<void> {
   try {
     await inngest.send({
       name: "overlay/prefetch.requested",

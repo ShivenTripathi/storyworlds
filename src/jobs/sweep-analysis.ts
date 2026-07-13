@@ -1,11 +1,8 @@
 import { and, isNull, lt, ne, or, eq, inArray } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, jobs, worldReferences } from "@/db/schema";
-import {
-  getFreeTierHeadroom,
-  isHeadroomTooLow,
-  isReaderActive,
-} from "@/services/queue";
+import { isReaderActive } from "@/services/queue";
+import { canSpend } from "@/services/quota";
 import {
   selectNextBookForAnalysis,
   type AnalysisCandidateInput,
@@ -32,7 +29,7 @@ const ANALYSIS_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes
 const MAX_ANALYSIS_ATTEMPTS = 3;
 
 export type SweepAnalysisResult =
-  | { skipped: "low_headroom"; headroomPct: number }
+  | { skipped: "quota_exhausted" }
   | { skipped: "readers_active" }
   | { skipped: "analysis_in_flight" }
   | { skipped: "none_eligible"; needsManualRetry: string[] }
@@ -197,12 +194,9 @@ export async function sweepAnalysisOnce(): Promise<SweepAnalysisResult> {
     return { skipped: "readers_active" };
   }
 
-  const headroom = await getFreeTierHeadroom();
-  if (isHeadroomTooLow(headroom)) {
-    console.log(
-      `[sweep-analysis] skipping tick — free-tier headroom at ${headroom.headroomPct}%`,
-    );
-    return { skipped: "low_headroom", headroomPct: headroom.headroomPct };
+  if (!(await canSpend("background"))) {
+    console.log("[sweep-analysis] skipping tick — background quota exhausted");
+    return { skipped: "quota_exhausted" };
   }
 
   const candidates = await loadAnalysisCandidates();

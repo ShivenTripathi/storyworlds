@@ -82,6 +82,7 @@ export function AdminQueue() {
     analysis,
     illustrations,
     freeTier,
+    quota,
     recentFailures,
   } = status;
 
@@ -120,7 +121,11 @@ export function AdminQueue() {
           done={illustrations.readyPages}
           total={illustrations.totalPages}
         />
-        <HeadroomGauge freeTier={freeTier} />
+        <HeadroomGauge
+          freeTier={freeTier}
+          quota={quota}
+          generatedAt={status.generatedAt}
+        />
       </div>
 
       <RecentFailures failures={recentFailures} />
@@ -202,8 +207,20 @@ function BurndownCard({
   );
 }
 
-function HeadroomGauge({ freeTier }: { freeTier: QueueStatusDto["freeTier"] }) {
+function HeadroomGauge({
+  freeTier,
+  quota,
+  generatedAt,
+}: {
+  freeTier: QueueStatusDto["freeTier"];
+  quota: QueueStatusDto["quota"];
+  generatedAt: string;
+}) {
   const low = freeTier.headroomPct < 20;
+  // Compared against the server's own snapshot time (not Date.now()) so the
+  // render stays pure; the panel re-polls every few seconds anyway.
+  const exhausted =
+    quota.exhaustedUntil !== null && quota.exhaustedUntil > generatedAt;
   return (
     <div className="rounded-lg border border-border p-3">
       <p className="eyebrow mb-2">Free-tier headroom</p>
@@ -226,6 +243,17 @@ function HeadroomGauge({ freeTier }: { freeTier: QueueStatusDto["freeTier"] }) {
         {freeTier.requestsToday.toLocaleString()} /{" "}
         {freeTier.dailyLimit.toLocaleString()} requests today
       </p>
+      <p className="mt-1 font-ui text-[11px] text-muted-foreground">
+        {quota.interactiveUsed.toLocaleString()} interactive ·{" "}
+        {quota.backgroundUsed.toLocaleString()} background (
+        {quota.backgroundRemaining.toLocaleString()} left)
+      </p>
+      {exhausted ? (
+        <p className="mt-1 font-ui text-[11px] text-[var(--destructive)]">
+          Daily quota exhausted — paused until{" "}
+          {new Date(quota.exhaustedUntil as string).toLocaleTimeString()}
+        </p>
+      ) : null}
     </div>
   );
 }

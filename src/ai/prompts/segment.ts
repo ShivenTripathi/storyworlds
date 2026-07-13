@@ -7,6 +7,16 @@
  * `src/domain/entities/slug.ts`.
  */
 
+/**
+ * Bump whenever a change to SEGMENT_SYSTEM_PROMPT/buildSegmentPrompt or
+ * SegmentAnalysisSchema would change what a segment's analysis looks like.
+ * This is folded into the content-addressed cache key (see
+ * src/services/segment-cache.ts computeSegmentHash) — bumping it silently
+ * invalidates every previously-cached segment result (old hashes simply stop
+ * matching anything new) without needing to delete rows.
+ */
+export const SEGMENT_PROMPT_VERSION = 1;
+
 export const SEGMENT_SYSTEM_PROMPT = `You are a literary analyst helping build a "world reference" for a novel —
 a spoiler-safe companion that later powers character chat and illustration.
 

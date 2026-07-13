@@ -108,6 +108,14 @@ export interface QueueStatusDto {
     booksWithBacklog: number;
   };
   freeTier: { requestsToday: number; dailyLimit: number; headroomPct: number };
+  /** The interactive/background quota split — see src/services/quota.ts. */
+  quota: {
+    limit: number;
+    interactiveUsed: number;
+    backgroundUsed: number;
+    backgroundRemaining: number;
+    exhaustedUntil: string | null;
+  };
   recentFailures: QueueFailureItem[];
   generatedAt: string;
 }

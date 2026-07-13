@@ -26,6 +26,7 @@ import { frontierFilter } from "@/domain/knowledge";
 import { pageToChunkIdx } from "@/domain/schemas";
 import { ApiError } from "@/lib/errors";
 import { getBook, getChunk, getProgress } from "@/services/books";
+import { canSpend } from "@/services/quota";
 
 export type { ChatMode };
 
@@ -354,6 +355,18 @@ export async function streamChatReply(
     acknowledgeSpoilers,
   } = opts;
   await dbReady;
+
+  // Quota gate (see src/services/quota.ts): interactive traffic owns a
+  // reserved slice of the daily free tier, so this only fails when the WHOLE
+  // day's budget is exhausted — surface that as a clean, friendly error
+  // instead of letting the stream hang on a raw 429.
+  if (!(await canSpend("interactive"))) {
+    throw new ApiError(
+      503,
+      "at_capacity",
+      "The reader's AI is at capacity for today — conversations resume after the daily reset.",
+    );
+  }
 
   const entity = await getEntity(bookId, entityId);
   if (!entity) {

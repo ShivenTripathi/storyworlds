@@ -9,6 +9,15 @@ import { ARCHETYPE_META, ARCHETYPES } from "@/theme/archetypes";
  * LLM only ever emits entity NAMES + ALIASES — never IDs.
  */
 
+/**
+ * Bump whenever a change to SYNTHESIS_SYSTEM_PROMPT/buildSynthesisPrompt or
+ * WorldSynthesisSchema would change what a synthesis result looks like —
+ * folded into the content-addressed cache key for synthesis results (see
+ * src/services/segment-cache.ts computeSynthesisHash), the same way
+ * SEGMENT_PROMPT_VERSION invalidates segment cache entries.
+ */
+export const SYNTHESIS_PROMPT_VERSION = 1;
+
 const THEME_ARCHETYPE_LINES = ARCHETYPES.map(
   (id) => `     - "${id}": ${ARCHETYPE_META[id].description}`,
 ).join("\n");

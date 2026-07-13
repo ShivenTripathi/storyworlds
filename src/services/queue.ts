@@ -15,76 +15,39 @@ import {
   jobs,
   overlays,
   readingProgress,
-  usageEvents,
   worldReferences,
 } from "@/db/schema";
-
-// Google AI Studio free-tier daily request cap (see CLAUDE.md ZERO-COST
-// CONSTRAINT). Duplicated from src/services/analytics.ts's
-// GEMINI_FREE_TIER_RPD rather than imported — analytics.ts is owned by a
-// parallel workstream on this branch, so this module stays decoupled from
-// it (same value, same source of truth in CLAUDE.md).
-// The `gemini-*-flash-lite-latest` alias currently resolves to
-// gemini-3.1-flash-lite, whose free-tier cap is 500 requests/day (NOT the 1500
-// we assumed — a 429 storm proved it: "limit: 500, model:
-// gemini-3.1-flash-lite"). Interactive traffic (chat, on-read illustrations)
-// shares this budget, so the background sweepers must pace against the real
-// number and leave generous headroom.
-const GEMINI_FREE_TIER_RPD = 500;
-
-/**
- * Below this remaining-headroom percentage, the sweepers skip their tick
- * entirely rather than start work that might tip the day over the free-tier
- * cap. Small requests still slip through elsewhere (chat, on-demand
- * overlays) so leaving a safety margin instead of pacing to exactly 0%
- * avoids the sweepers eating the last few percent readers might need.
- */
-// Founder's split of the 500/day budget: reserve ~50 requests for interactive
-// traffic (chat + on-read illustrations, which never check this gate and so
-// always have that slice available), and let background sweepers use the
-// other ~450. So the sweepers stop once less than 10% (~50) remains.
-export const HEADROOM_SKIP_THRESHOLD_PCT = 10;
-
-function startOfUtcDay(d: Date): Date {
-  return new Date(
-    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
-  );
-}
+import { BACKGROUND_BUDGET } from "@/domain/quota";
+import { getQuota } from "@/services/quota";
 
 export interface FreeTierHeadroom {
   requestsToday: number;
   dailyLimit: number;
+  /** Percent of the BACKGROUND slice (see src/services/quota.ts) still
+   * remaining — 0% means the sweepers should stop, not that the whole
+   * daily cap is gone (interactive traffic keeps its own reserve). */
   headroomPct: number;
 }
 
 /**
- * Today's Gemini free-tier request usage vs the daily cap. Both sweepers
- * check this before enqueuing/generating anything so the background system
- * paces itself and never blows the daily quota (see CLAUDE.md ZERO-COST
- * CONSTRAINT).
+ * Today's Gemini free-tier request usage vs the daily cap, expressed as
+ * background-slice headroom — a thin view over src/services/quota.ts's
+ * `getQuota` for callers (mainly the admin panel) that just want a single
+ * percentage rather than the full interactive/background split. Sweepers
+ * should call `canSpend("background")` directly rather than this — see
+ * CLAUDE.md ZERO-COST CONSTRAINT.
  */
 export async function getFreeTierHeadroom(): Promise<FreeTierHeadroom> {
-  await dbReady;
-
-  const todayStart = startOfUtcDay(new Date());
-  const [{ requestsToday }] = await db
-    .select({ requestsToday: sql<number>`count(*)::int` })
-    .from(usageEvents)
-    .where(gte(usageEvents.createdAt, todayStart));
-
+  const quota = await getQuota();
   const headroomPct = Math.max(
     0,
-    Math.round(
-      ((GEMINI_FREE_TIER_RPD - requestsToday) / GEMINI_FREE_TIER_RPD) * 100,
-    ),
+    Math.round((quota.backgroundRemaining / BACKGROUND_BUDGET) * 100),
   );
-
-  return { requestsToday, dailyLimit: GEMINI_FREE_TIER_RPD, headroomPct };
-}
-
-/** True when the sweepers should skip this tick rather than start new work. */
-export function isHeadroomTooLow(headroom: FreeTierHeadroom): boolean {
-  return headroom.headroomPct < HEADROOM_SKIP_THRESHOLD_PCT;
+  return {
+    requestsToday: quota.usedToday,
+    dailyLimit: quota.limit,
+    headroomPct,
+  };
 }
 
 // A reader active within this window gets the free tier to themselves — the
@@ -137,6 +100,17 @@ export interface QueueFailureItem {
   cooldownEndsAt: string | null;
 }
 
+export interface QuotaSplitDto {
+  limit: number;
+  interactiveUsed: number;
+  backgroundUsed: number;
+  backgroundRemaining: number;
+  /** ISO timestamp; null while healthy. Non-null means a recent DAILY 429
+   * has every canSpend() check failing closed until this time (see
+   * src/services/quota.ts markExhausted). */
+  exhaustedUntil: string | null;
+}
+
 export interface QueueStatusDto {
   processing: QueueProcessingItem[];
   analysisBacklog: { pending: number; running: number; failed: number };
@@ -147,6 +121,8 @@ export interface QueueStatusDto {
     booksWithBacklog: number;
   };
   freeTier: FreeTierHeadroom;
+  /** The real interactive/background split — see src/services/quota.ts. */
+  quota: QuotaSplitDto;
   recentFailures: QueueFailureItem[];
   generatedAt: string;
 }
@@ -175,7 +151,7 @@ export async function getQueueStatus(): Promise<QueueStatusDto> {
     totalReadyRow,
     illustrationRows,
     failureRows,
-    freeTier,
+    quota,
   ] = await Promise.all([
     db
       .select({
@@ -238,8 +214,17 @@ export async function getQueueStatus(): Promise<QueueStatusDto> {
       .orderBy(desc(jobs.updatedAt))
       .limit(RECENT_FAILURES_LIMIT),
 
-    getFreeTierHeadroom(),
+    getQuota(),
   ]);
+
+  const freeTier: FreeTierHeadroom = {
+    requestsToday: quota.usedToday,
+    dailyLimit: quota.limit,
+    headroomPct: Math.max(
+      0,
+      Math.round((quota.backgroundRemaining / BACKGROUND_BUDGET) * 100),
+    ),
+  };
 
   const backlogByStatus = new Map(backlogRows.map((r) => [r.status, r.n]));
 
@@ -316,7 +301,14 @@ export async function getQueueStatus(): Promise<QueueStatusDto> {
       totalReady: totalReadyRow[0]?.n ?? 0,
     },
     illustrations: illustrationTotals,
-    freeTier: freeTier,
+    freeTier,
+    quota: {
+      limit: quota.limit,
+      interactiveUsed: quota.interactiveUsed,
+      backgroundUsed: quota.backgroundUsed,
+      backgroundRemaining: quota.backgroundRemaining,
+      exhaustedUntil: quota.exhaustedUntil?.toISOString() ?? null,
+    },
     recentFailures,
     generatedAt: new Date().toISOString(),
   };

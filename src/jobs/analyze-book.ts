@@ -32,9 +32,19 @@ import {
 } from "@/domain/schemas";
 import { segmentChunks } from "@/domain/segmentation";
 import { env } from "@/lib/env";
+import { canSpend } from "@/services/quota";
 import { generateCoverForBook } from "@/services/cover";
 import { generateFunFactsForBook } from "@/services/funfacts";
 import { generateOverlayCore } from "@/services/overlays";
+import {
+  computeSegmentHash,
+  computeSynthesisHash,
+  getCachedSegment,
+  getCachedSynthesis,
+  putCachedSegment,
+  putCachedSynthesis,
+  QuotaPausedError,
+} from "@/services/segment-cache";
 import { inngest } from "./client";
 
 // ---------------------------------------------------------------------------
@@ -339,24 +349,47 @@ export async function runAnalysis(
   const segmentResults: SegmentAnalysis[] = new Array(total);
   let done = 0;
 
+  // Content-addressed cache lookup + quota gate (see
+  // src/services/segment-cache.ts, src/services/quota.ts): a segment whose
+  // text was already analyzed — by THIS book's prior (aborted or stale-
+  // pipeline) run, or by any other book that happens to share the text —
+  // costs zero fresh LLM calls. Only a genuine cache MISS spends background
+  // quota; when that quota is gone, the run aborts cleanly (nothing partial
+  // persisted beyond the cache) so a later retry resumes from exactly where
+  // this one left off.
   await runWithConcurrency(
     segments,
     SEGMENT_CONCURRENCY,
     async (segment, i) => {
-      const result = await stepRunner(`segment-${i}`, async () => {
-        const analysis = await completeJson({
-          operation: "segment",
-          system: SEGMENT_SYSTEM_PROMPT,
-          prompt: buildSegmentPrompt({
-            index: segment.index,
-            totalSegments: total,
-            text: segment.text,
-          }),
-          schema: SegmentAnalysisSchema,
-          bookId,
+      const hash = computeSegmentHash(segment.text);
+      const cached = await getCachedSegment(hash);
+
+      let result: SegmentAnalysis;
+      if (cached) {
+        result = cached;
+      } else {
+        if (!(await canSpend("background"))) {
+          throw new QuotaPausedError(
+            `background quota exhausted before segment ${i + 1}/${total} of "${bookTitle}" — resumes automatically from the segment cache once quota resets`,
+          );
+        }
+        result = await stepRunner(`segment-${i}`, async () => {
+          const analysis = await completeJson({
+            operation: "segment",
+            system: SEGMENT_SYSTEM_PROMPT,
+            prompt: buildSegmentPrompt({
+              index: segment.index,
+              totalSegments: total,
+              text: segment.text,
+            }),
+            schema: SegmentAnalysisSchema,
+            bookId,
+          });
+          const truncated = truncateSegmentAnalysis(analysis);
+          await putCachedSegment(hash, truncated);
+          return truncated;
         });
-        return truncateSegmentAnalysis(analysis);
-      });
+      }
 
       segmentResults[i] = result;
       done += 1;
@@ -369,20 +402,39 @@ export async function runAnalysis(
 
   await updateJob(jobId, { stage: "Weaving the world…", progress: 70 });
 
+  // Synthesis is whole-book (not segment-shaped), but re-analyzing the exact
+  // same notes digest — e.g. a retry after a quota pause that landed right
+  // here, with every segment already cached — should skip it too rather than
+  // spend a fresh call recomputing an identical result.
   const notesDigest = buildNotesDigest(segmentResults);
-  const synthesis = await stepRunner("synthesize", () =>
-    completeJson({
-      operation: "synthesis",
-      system: SYNTHESIS_SYSTEM_PROMPT,
-      prompt: buildSynthesisPrompt({
-        bookTitle,
-        totalSegments: total,
-        notesDigest,
-      }),
-      schema: WorldSynthesisSchema,
-      bookId,
-    }),
-  );
+  const synthesisHash = computeSynthesisHash({ bookTitle, notesDigest });
+  const cachedSynthesis = await getCachedSynthesis(synthesisHash);
+
+  let synthesis: WorldSynthesis;
+  if (cachedSynthesis) {
+    synthesis = cachedSynthesis;
+  } else {
+    if (!(await canSpend("background"))) {
+      throw new QuotaPausedError(
+        `background quota exhausted before synthesizing "${bookTitle}" — resumes automatically (every segment is already cached) once quota resets`,
+      );
+    }
+    synthesis = await stepRunner("synthesize", async () => {
+      const result = await completeJson({
+        operation: "synthesis",
+        system: SYNTHESIS_SYSTEM_PROMPT,
+        prompt: buildSynthesisPrompt({
+          bookTitle,
+          totalSegments: total,
+          notesDigest,
+        }),
+        schema: WorldSynthesisSchema,
+        bookId,
+      });
+      await putCachedSynthesis(synthesisHash, result);
+      return result;
+    });
+  }
 
   await stepRunner("persist", async () => {
     await persistWorld(bookId, synthesis, segmentResults);
@@ -402,6 +454,17 @@ export async function runAnalysis(
     await stepRunner("warm-start", async () => {
       const warmStartCount = warmStartLastIdx + 1;
       for (let idx = 0; idx <= warmStartLastIdx; idx++) {
+        // Best-effort AND quota-aware: unlike the segment/synthesis gate
+        // above, running out of background quota here just stops warm-start
+        // early rather than failing the (already-completed) analysis job —
+        // the overlay sweeper (src/jobs/sweep-overlays.ts) drains whatever's
+        // left once quota is back.
+        if (!(await canSpend("background"))) {
+          console.warn(
+            `[analyze-book] pausing warm-start overlays for book ${bookId} — background quota exhausted (${idx}/${warmStartCount} done); the overlay sweeper will finish the rest`,
+          );
+          break;
+        }
         try {
           await generateOverlayCore(bookId, idx);
         } catch (err) {

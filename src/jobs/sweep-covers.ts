@@ -2,11 +2,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, jobs, worldReferences } from "@/db/schema";
 import { generateCoverForBook } from "@/services/cover";
-import {
-  getFreeTierHeadroom,
-  isHeadroomTooLow,
-  isReaderActive,
-} from "@/services/queue";
+import { isReaderActive } from "@/services/queue";
+import { canSpend } from "@/services/quota";
 import { classifyPriorityTier, sortByPriority } from "./priority";
 import { inngest } from "./client";
 
@@ -30,7 +27,7 @@ import { inngest } from "./client";
 const COVER_SWEEP_CRON = "TZ=UTC */5 * * * *";
 
 export type SweepCoversResult =
-  | { skipped: "low_headroom"; headroomPct: number }
+  | { skipped: "quota_exhausted" }
   | { skipped: "readers_active" }
   | { skipped: "analysis_running" }
   | { skipped: "none_eligible" }
@@ -80,12 +77,9 @@ async function loadCoverCandidates(): Promise<CoverCandidate[]> {
 export async function sweepCoversOnce(): Promise<SweepCoversResult> {
   await dbReady;
 
-  const headroom = await getFreeTierHeadroom();
-  if (isHeadroomTooLow(headroom)) {
-    console.log(
-      `[sweep-covers] skipping tick — free-tier headroom at ${headroom.headroomPct}%`,
-    );
-    return { skipped: "low_headroom", headroomPct: headroom.headroomPct };
+  if (!(await canSpend("background"))) {
+    console.log("[sweep-covers] skipping tick — background quota exhausted");
+    return { skipped: "quota_exhausted" };
   }
 
   // Yield to active readers so interactive chat / on-read illustrations own

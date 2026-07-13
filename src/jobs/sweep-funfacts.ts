@@ -2,11 +2,8 @@ import { and, eq, isNull } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, jobs, worldReferences } from "@/db/schema";
 import { generateFunFactsForBook } from "@/services/funfacts";
-import {
-  getFreeTierHeadroom,
-  isHeadroomTooLow,
-  isReaderActive,
-} from "@/services/queue";
+import { isReaderActive } from "@/services/queue";
+import { canSpend } from "@/services/quota";
 import { classifyPriorityTier, sortByPriority } from "./priority";
 import { inngest } from "./client";
 
@@ -30,7 +27,7 @@ import { inngest } from "./client";
 const FUNFACTS_SWEEP_CRON = "TZ=UTC */5 * * * *";
 
 export type SweepFunFactsResult =
-  | { skipped: "low_headroom"; headroomPct: number }
+  | { skipped: "quota_exhausted" }
   | { skipped: "readers_active" }
   | { skipped: "analysis_running" }
   | { skipped: "none_eligible" }
@@ -84,12 +81,9 @@ export async function sweepFunFactsOnce(): Promise<SweepFunFactsResult> {
     return { skipped: "readers_active" };
   }
 
-  const headroom = await getFreeTierHeadroom();
-  if (isHeadroomTooLow(headroom)) {
-    console.log(
-      `[sweep-funfacts] skipping tick — free-tier headroom at ${headroom.headroomPct}%`,
-    );
-    return { skipped: "low_headroom", headroomPct: headroom.headroomPct };
+  if (!(await canSpend("background"))) {
+    console.log("[sweep-funfacts] skipping tick — background quota exhausted");
+    return { skipped: "quota_exhausted" };
   }
 
   const [runningAnalysis] = await db

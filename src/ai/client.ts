@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { db, dbReady } from "@/db";
 import { usageEvents } from "@/db/schema";
+import { startOfNextUtcDay } from "@/domain/quota";
+import {
+  classifyRateLimitError,
+  type RateLimitInfo,
+} from "@/domain/rate-limit";
 import { env } from "@/lib/env";
+import { markExhausted } from "@/services/quota";
 import { MockDriver } from "./mock";
 
 export type LlmOperation =
@@ -359,12 +365,45 @@ const GEMINI_BACKOFF_FACTOR = 2;
 const GEMINI_BACKOFF_MAX_ATTEMPTS = 3;
 const GEMINI_BACKOFF_MAX_MS = 60_000;
 
-function isRateLimitError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
+function errorMessage(err: unknown): string {
+  if (!err || typeof err !== "object") return String(err ?? "");
   const e = err as { status?: number; message?: string; name?: string };
-  if (e.status === 429) return true;
-  const msg = `${e.message ?? ""} ${e.name ?? ""}`;
-  return /RESOURCE_EXHAUSTED|429/i.test(msg);
+  const statusPart = e.status !== undefined ? `${e.status}` : "";
+  return `${statusPart} ${e.message ?? ""} ${e.name ?? ""}`;
+}
+
+/**
+ * The estimated wall-clock time a DAILY-exhaustion 429 lifts: the error's own
+ * retry-after when it gave one, otherwise the start of the next UTC day (the
+ * free-tier cap resets daily — see CLAUDE.md ZERO-COST CONSTRAINT). Safer to
+ * over-estimate (wait out the rest of today) than under-estimate and retry
+ * straight into another 429.
+ */
+function dailyExhaustionUntilMs(info: RateLimitInfo): number {
+  const now = new Date();
+  return info.retryAfterMs !== null
+    ? now.getTime() + info.retryAfterMs
+    : startOfNextUtcDay(now).getTime();
+}
+
+/**
+ * Classifies a caught error as a rate limit (and if so, daily vs transient —
+ * see src/domain/rate-limit.ts) and, on a DAILY exhaustion, records it via
+ * quota.markExhausted so every other in-flight/future caller fails closed
+ * instead of rediscovering the same exhaustion one 429 at a time (the "don't
+ * try anything unnecessarily" fix for the incident that motivated this
+ * module — see CLAUDE.md).
+ */
+async function classifyAndRecord(err: unknown): Promise<RateLimitInfo> {
+  const info = classifyRateLimitError({ message: errorMessage(err) });
+  if (info.kind === "daily") {
+    try {
+      await markExhausted(dailyExhaustionUntilMs(info));
+    } catch (markErr) {
+      console.error("[ai] failed to record quota exhaustion:", markErr);
+    }
+  }
+  return info;
 }
 
 function sleep(ms: number): Promise<void> {
@@ -372,11 +411,14 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Retries `fn` on a 429/RESOURCE_EXHAUSTED error with exponential backoff +
- * jitter, up to GEMINI_BACKOFF_MAX_ATTEMPTS attempts. Shared by both drivers
- * for the one request that's safe to retry: establishing the initial
- * connection (JSON completion, or opening a stream) — never mid-stream,
- * since a partial reply can't be safely restarted transparently.
+ * Retries `fn` on a TRANSIENT (per-minute) 429/RESOURCE_EXHAUSTED error with
+ * exponential backoff + jitter, up to GEMINI_BACKOFF_MAX_ATTEMPTS attempts.
+ * A DAILY-exhaustion 429 is never retried here — see `classifyAndRecord` —
+ * since the whole day's budget is gone and retrying can only waste time on a
+ * call that will 429 again. Shared by both drivers for the one request
+ * that's safe to retry: establishing the initial connection (JSON
+ * completion, or opening a stream) — never mid-stream, since a partial reply
+ * can't be safely restarted transparently.
  */
 async function withRateLimitBackoff<T>(fn: () => Promise<T>): Promise<T> {
   let attempt = 0;
@@ -384,8 +426,18 @@ async function withRateLimitBackoff<T>(fn: () => Promise<T>): Promise<T> {
     try {
       return await fn();
     } catch (err) {
+      const info = await classifyAndRecord(err);
+      if (info.kind === "none") {
+        throw err;
+      }
+      if (info.kind === "daily") {
+        console.warn(
+          "[ai] Gemini DAILY free-tier quota exhausted — failing fast instead of retrying",
+        );
+        throw err;
+      }
       attempt += 1;
-      if (!isRateLimitError(err) || attempt >= GEMINI_BACKOFF_MAX_ATTEMPTS) {
+      if (attempt >= GEMINI_BACKOFF_MAX_ATTEMPTS) {
         throw err;
       }
       const delay = Math.min(
@@ -395,7 +447,7 @@ async function withRateLimitBackoff<T>(fn: () => Promise<T>): Promise<T> {
       const jitter = Math.random() * delay * 0.25;
       const waitMs = Math.round(delay + jitter);
       console.warn(
-        `[ai] rate limit hit (attempt ${attempt}/${GEMINI_BACKOFF_MAX_ATTEMPTS}) — retrying in ${waitMs}ms`,
+        `[ai] transient rate limit hit (attempt ${attempt}/${GEMINI_BACKOFF_MAX_ATTEMPTS}) — retrying in ${waitMs}ms`,
       );
       await sleep(waitMs);
     }
@@ -478,8 +530,18 @@ class GeminiDriver implements LlmDriver {
           outputTokens: response.usageMetadata?.candidatesTokenCount ?? 0,
         };
       } catch (err) {
+        const info = await classifyAndRecord(err);
+        if (info.kind === "none") {
+          throw err;
+        }
+        if (info.kind === "daily") {
+          console.warn(
+            `[ai] Gemini DAILY free-tier quota exhausted (model=${opts.model}) — failing fast instead of retrying`,
+          );
+          throw err;
+        }
         attempt += 1;
-        if (!isRateLimitError(err) || attempt >= GEMINI_BACKOFF_MAX_ATTEMPTS) {
+        if (attempt >= GEMINI_BACKOFF_MAX_ATTEMPTS) {
           throw err;
         }
         const delay = Math.min(
@@ -489,7 +551,7 @@ class GeminiDriver implements LlmDriver {
         const jitter = Math.random() * delay * 0.25;
         const waitMs = Math.round(delay + jitter);
         console.warn(
-          `[ai] Gemini free-tier rate limit hit (model=${opts.model}, attempt ${attempt}/${GEMINI_BACKOFF_MAX_ATTEMPTS}) — retrying in ${waitMs}ms`,
+          `[ai] Gemini transient free-tier rate limit hit (model=${opts.model}, attempt ${attempt}/${GEMINI_BACKOFF_MAX_ATTEMPTS}) — retrying in ${waitMs}ms`,
         );
         await sleep(waitMs);
       }

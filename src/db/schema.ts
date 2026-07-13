@@ -586,6 +586,43 @@ export const feedback = pgTable(
 );
 
 // ---------------------------------------------------------------------------
+// quotaState — singleton row (id=1) tracking whether the Gemini free-tier
+// DAILY request cap was just hit. See src/services/quota.ts / CLAUDE.md
+// ZERO-COST CONSTRAINT. `exhausted_until` is null while healthy; once a
+// DAILY-exhaustion 429 is observed (src/ai/client.ts), it's set to the
+// (estimated) reset time and every `canSpend()` check fails closed until
+// `now` passes it — the "don't try anything unnecessarily" gate that stops
+// a backlog from re-discovering the same exhaustion one 429 at a time.
+// ---------------------------------------------------------------------------
+export const quotaState = pgTable("quota_state", {
+  id: integer("id").primaryKey(),
+  exhaustedUntil: timestamp("exhausted_until", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
+// segmentCache — content-addressed cache of raw per-segment LLM analysis
+// results (src/jobs/analyze-book.ts's segment loop, pre-synthesis). `hash`
+// is sha256(segment text + a prompt-version constant) — see
+// src/services/segment-cache.ts. Keying on content (not bookId/index) means
+// the SAME segment text is analyzed at most ONCE ever, across re-analyses
+// of the same book AND across different books that happen to share text
+// (e.g. a shared front-matter/preface) — this is where the pipeline's
+// amortization actually lands, and it's also the resumability mechanism: a
+// quota-paused analysis retried later re-hits this cache for every segment
+// it already finished and only spends fresh quota on what's left.
+// ---------------------------------------------------------------------------
+export const segmentCache = pgTable("segment_cache", {
+  hash: text("hash").primaryKey(),
+  result: jsonb("result").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
+// ---------------------------------------------------------------------------
 // apiKeys
 // ---------------------------------------------------------------------------
 export const apiKeys = pgTable("api_keys", {

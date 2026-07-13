@@ -2,11 +2,8 @@ import { and, eq } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { books, jobs, overlays, worldReferences } from "@/db/schema";
 import { generateOverlayCore } from "@/services/overlays";
-import {
-  getFreeTierHeadroom,
-  isHeadroomTooLow,
-  isReaderActive,
-} from "@/services/queue";
+import { isReaderActive } from "@/services/queue";
+import { canSpend } from "@/services/quota";
 import {
   nextMissingOverlayChunks,
   selectNextBookForOverlays,
@@ -37,7 +34,7 @@ const OVERLAY_SWEEP_BATCH_SIZE = 3;
 const OVERLAY_SWEEP_CONCURRENCY = 3;
 
 export type SweepOverlaysResult =
-  | { skipped: "low_headroom"; headroomPct: number }
+  | { skipped: "quota_exhausted" }
   | { skipped: "readers_active" }
   | { skipped: "analysis_running" }
   | { skipped: "none_eligible" }
@@ -129,12 +126,9 @@ export async function sweepOverlaysOnce(): Promise<SweepOverlaysResult> {
     return { skipped: "readers_active" };
   }
 
-  const headroom = await getFreeTierHeadroom();
-  if (isHeadroomTooLow(headroom)) {
-    console.log(
-      `[sweep-overlays] skipping tick — free-tier headroom at ${headroom.headroomPct}%`,
-    );
-    return { skipped: "low_headroom", headroomPct: headroom.headroomPct };
+  if (!(await canSpend("background"))) {
+    console.log("[sweep-overlays] skipping tick — background quota exhausted");
+    return { skipped: "quota_exhausted" };
   }
 
   const [runningAnalysis] = await db
