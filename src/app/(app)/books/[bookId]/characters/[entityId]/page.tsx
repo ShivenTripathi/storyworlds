@@ -29,16 +29,31 @@ export default function CharacterDossierPage({
   const [themeArchetype, setThemeArchetype] = useState<string | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [chatOpen, setChatOpen] = useState(false);
+  // The reader's current page — the chat persona should speak from where the
+  // READER is in the book, not from the character's introduction point (the
+  // server clamps to the frontier regardless, so this can never over-reveal).
+  const [readerChunk, setReaderChunk] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
       try {
-        const { dossier: d, themeArchetype: theme } = await fetchDossier(
-          bookId,
-          decodedEntityId,
-        );
+        const [{ dossier: d, themeArchetype: theme }, progressRes] =
+          await Promise.all([
+            fetchDossier(bookId, decodedEntityId),
+            fetch(`/api/books/${bookId}`).catch(() => null),
+          ]);
+        if (cancelled) return;
+        if (progressRes?.ok) {
+          const data = (await progressRes.json()) as {
+            progress?: { currentChunk?: number };
+            book?: { progress?: { currentChunk?: number } };
+          };
+          const current =
+            data.progress?.currentChunk ?? data.book?.progress?.currentChunk;
+          if (typeof current === "number") setReaderChunk(current);
+        }
         if (cancelled) return;
         setDossier(d);
         setThemeArchetype(theme);
@@ -272,7 +287,7 @@ export default function CharacterDossierPage({
               bookId={bookId}
               entityId={entity.id}
               entityName={entity.name}
-              chunkIdx={entity.introducedAtChunk ?? 0}
+              chunkIdx={readerChunk}
             />
           </div>
         </section>

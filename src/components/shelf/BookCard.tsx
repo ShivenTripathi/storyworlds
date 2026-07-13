@@ -27,69 +27,112 @@ export function BookCard({ book, onDelete }: BookCardProps) {
     onDelete(book.id);
   }
 
+  /**
+   * A failed book has nothing to open — the reader route only handles books
+   * that finished extraction. Rather than clicking through to a broken
+   * reader, the retry CTA reopens the add-book dialog (its "tile" trigger is
+   * always present in the grid alongside this card — see UploadBook.tsx's
+   * [data-add-book-trigger]). Wiring a dedicated "open the dialog" callback
+   * through ShelfClient would be the more direct route, but this keeps the
+   * fix self-contained to the card.
+   */
+  function handleRetry(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    document
+      .querySelector<HTMLButtonElement>("[data-add-book-trigger]")
+      ?.click();
+  }
+
+  const cover = (
+    <div className="relative">
+      <TypographicCover
+        bookId={book.id}
+        title={book.title}
+        author={book.author}
+        archetype={book.themeArchetype}
+        coverUrl={book.coverUrl}
+      />
+
+      {isFailed ? (
+        <div className="absolute inset-0 flex flex-col items-center justify-end gap-2 rounded-lg bg-[var(--oxblood-500)]/20 p-3">
+          <p className="w-full rounded bg-[var(--oxblood-500)]/80 px-3 py-1.5 text-center font-ui text-xs font-medium text-[var(--parchment-100)]">
+            Extraction failed
+          </p>
+          <button
+            type="button"
+            onClick={handleRetry}
+            className="w-full rounded-full bg-[var(--parchment-100)] px-3 py-1.5 font-ui text-xs font-medium text-[var(--ink-950)] transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+          >
+            Try again
+          </button>
+        </div>
+      ) : null}
+
+      {isExtracting ? (
+        <div className="absolute inset-0 flex items-end rounded-lg">
+          <p className="w-full animate-pulse bg-[var(--ink-950)]/70 px-3 py-1.5 text-center font-ui text-xs font-medium text-[var(--parchment-100)]">
+            preparing…
+          </p>
+        </div>
+      ) : null}
+
+      {started && !isFailed ? (
+        <div className="absolute inset-x-0 bottom-0 h-1 rounded-b-lg bg-[var(--ink-950)]/40">
+          <div
+            className="h-full rounded-b-lg bg-[var(--world-accent)]"
+            style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+
+  const meta = (
+    <>
+      <div className="mt-3 space-y-0.5">
+        <p className="line-clamp-2 font-display text-sm leading-snug text-foreground">
+          {book.title}
+        </p>
+        {book.author ? (
+          <p className="font-ui text-xs text-muted-foreground">{book.author}</p>
+        ) : null}
+      </div>
+
+      {book.blurb ? (
+        <p className="mt-1.5 line-clamp-3 font-reading text-xs leading-relaxed text-muted-foreground">
+          {book.blurb}
+        </p>
+      ) : null}
+    </>
+  );
+
   return (
     <div className="group relative">
-      <Link
-        href={`/books/${book.id}`}
-        aria-label={`Open ${book.title}`}
-        className={`block rounded-lg transition-all duration-200 ease-out outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
-          deleting
-            ? "pointer-events-none opacity-40"
-            : "hover:-translate-y-0.5 hover:shadow-lg"
-        }`}
-      >
-        <div className="relative">
-          <TypographicCover
-            bookId={book.id}
-            title={book.title}
-            author={book.author}
-            archetype={book.themeArchetype}
-            coverUrl={book.coverUrl}
-          />
-
-          {isFailed ? (
-            <div className="absolute inset-0 flex items-end rounded-lg bg-[var(--oxblood-500)]/20">
-              <p className="w-full bg-[var(--oxblood-500)]/80 px-3 py-1.5 text-center font-ui text-xs font-medium text-[var(--parchment-100)]">
-                extraction failed
-              </p>
-            </div>
-          ) : null}
-
-          {isExtracting ? (
-            <div className="absolute inset-0 flex items-end rounded-lg">
-              <p className="w-full animate-pulse bg-[var(--ink-950)]/70 px-3 py-1.5 text-center font-ui text-xs font-medium text-[var(--parchment-100)]">
-                preparing…
-              </p>
-            </div>
-          ) : null}
-
-          {started && !isFailed ? (
-            <div className="absolute inset-x-0 bottom-0 h-1 rounded-b-lg bg-[var(--ink-950)]/40">
-              <div
-                className="h-full rounded-b-lg bg-[var(--world-accent)]"
-                style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
-              />
-            </div>
-          ) : null}
+      {isFailed ? (
+        // Non-navigable: a failed extraction has no reader to open. The
+        // "Try again" button above is the only interactive affordance here.
+        <div
+          aria-label={`${book.title}, extraction failed`}
+          className="block rounded-lg"
+        >
+          {cover}
+          {meta}
         </div>
-
-        <div className="mt-3 space-y-0.5">
-          <p className="line-clamp-2 font-display text-sm leading-snug text-foreground">
-            {book.title}
-          </p>
-          {book.author ? (
-            <p className="font-ui text-xs text-muted-foreground">
-              {book.author}
-            </p>
-          ) : null}
-        </div>
-
-        {book.blurb ? (
-          <p className="mt-1.5 line-clamp-3 font-reading text-xs leading-relaxed text-muted-foreground">
-            {book.blurb}
-          </p>
-        ) : null}
-      </Link>
+      ) : (
+        <Link
+          href={`/books/${book.id}`}
+          aria-label={`Open ${book.title}`}
+          className={`block rounded-lg transition-all duration-200 ease-out outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+            deleting
+              ? "pointer-events-none opacity-40"
+              : "hover:-translate-y-0.5 hover:shadow-lg"
+          }`}
+        >
+          {cover}
+          {meta}
+        </Link>
+      )}
 
       {/* overflow / delete affordance */}
       <div className="absolute top-2 right-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { extractBookInBrowser, ExtractionError } from "./extract-book";
 import type { Book, ApiErrorBody } from "./types";
 
@@ -22,21 +22,29 @@ type UploadState = "idle" | "uploading" | "error";
 
 export function UploadBook({ onUploaded, variant = "tile" }: UploadBookProps) {
   const [open, setOpen] = useState(false);
+  // Restored focus on dialog close, and (for the compact grid tile) a
+  // programmatic hook that BookCard's "Try again" CTA on a failed book uses
+  // to reopen this same dialog — see the [data-add-book-trigger] selector.
+  const triggerRef = useRef<HTMLButtonElement>(null);
 
   return (
     <>
       {variant === "hero" ? (
         <button
+          ref={triggerRef}
           type="button"
           onClick={() => setOpen(true)}
+          data-add-book-trigger
           className="w-full max-w-sm rounded-full bg-[var(--world-accent)] px-6 py-3 font-ui text-sm font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90"
         >
           Add a book
         </button>
       ) : (
         <button
+          ref={triggerRef}
           type="button"
           onClick={() => setOpen(true)}
+          data-add-book-trigger
           className="group flex aspect-[3/4] w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border text-muted-foreground transition-colors duration-200 hover:border-[var(--world-accent,var(--primary))] hover:text-[var(--world-accent,var(--primary))]"
         >
           <span className="text-3xl leading-none">+</span>
@@ -46,6 +54,7 @@ export function UploadBook({ onUploaded, variant = "tile" }: UploadBookProps) {
 
       {open ? (
         <UploadDialog
+          triggerRef={triggerRef}
           onClose={() => setOpen(false)}
           onUploaded={(book) => {
             onUploaded(book);
@@ -97,9 +106,11 @@ async function postUpload(body: unknown): Promise<Response> {
 }
 
 function UploadDialog({
+  triggerRef,
   onClose,
   onUploaded,
 }: {
+  triggerRef: React.RefObject<HTMLButtonElement | null>;
   onClose: () => void;
   onUploaded: (book: Book) => void;
 }) {
@@ -113,6 +124,7 @@ function UploadDialog({
   const [contribution, setContribution] = useState<Contribution>("private");
   const [attestation, setAttestation] = useState<Attestation | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   function validateAndSetFile(candidate: File | undefined | null) {
     if (!candidate) return;
@@ -191,6 +203,57 @@ function UploadDialog({
 
   const busy = state === "uploading";
 
+  function closeAndRestore() {
+    onClose();
+    // The dialog is about to unmount; the trigger button stays put (it's
+    // rendered unconditionally by UploadBook), so focus can move back to it
+    // immediately.
+    triggerRef.current?.focus();
+  }
+
+  // Focus trap + Escape-to-close, active for the dialog's whole mounted
+  // lifetime (it only exists while open — see UploadBook). Escape is
+  // guarded by `busy` so an in-flight upload can't be abandoned by accident.
+  // Mirrors the trap/Escape pattern in FeedbackWidget.
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    dialog?.querySelector<HTMLElement>("[data-autofocus]")?.focus();
+
+    function focusableEls(): HTMLElement[] {
+      if (!dialog) return [];
+      return Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        if (busy) return;
+        e.stopPropagation();
+        closeAndRestore();
+        return;
+      }
+      if (e.key !== "Tab") return;
+      const els = focusableEls();
+      if (els.length === 0) return;
+      const first = els[0];
+      const last = els[els.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- closeAndRestore/triggerRef are stable enough for this trap; re-running per render would just re-bind the same listener
+  }, [busy]);
+
   return (
     // Backdrop: click-to-close is a mouse convenience; the dialog is also
     // dismissible via the Cancel button and the Escape key (handled above), so
@@ -198,12 +261,13 @@ function UploadDialog({
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-[var(--scrim)] px-4"
-      onClick={() => !busy && onClose()}
+      onClick={() => !busy && closeAndRestore()}
     >
       {/* Stop propagation so clicks inside the dialog don't close it. Not an
           interactive control itself. */}
       {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events */}
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label="Add a book"
@@ -216,6 +280,7 @@ function UploadDialog({
         <div
           role="button"
           tabIndex={0}
+          data-autofocus
           aria-label="Choose a PDF, EPUB, or text file, or drag one here"
           onDragOver={(e) => {
             e.preventDefault();
@@ -397,7 +462,7 @@ function UploadDialog({
           <button
             type="button"
             disabled={busy}
-            onClick={onClose}
+            onClick={closeAndRestore}
             className="rounded-full px-4 py-2 font-ui text-sm text-muted-foreground hover:text-foreground disabled:opacity-50"
           >
             Cancel

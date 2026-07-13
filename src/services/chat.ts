@@ -501,7 +501,27 @@ export async function streamChatReply(
       );
       resolveAssistantId(assistantMessage.id);
     } catch (err) {
-      rejectAssistantId(err);
+      // A mid-stream failure (LLM error, dropped connection, etc.) used to
+      // leave a dangling turn: the user's message was already persisted
+      // above, but no assistant row ever followed, so the session's history
+      // read back with a question and no answer. Chosen semantics: persist
+      // a short placeholder reply (any partial text already generated, or a
+      // faltering-connection note) rather than retroactively deleting the
+      // user's message — the reader did send something real, and silently
+      // erasing it would be more surprising than a visibly failed reply.
+      // This keeps every user turn paired with exactly one assistant turn.
+      try {
+        const placeholderContent = full.trim() || "—the connection faltered—";
+        const assistantMessage = await appendMessage(
+          session.id,
+          "assistant",
+          placeholderContent,
+          chunkIdx,
+        );
+        resolveAssistantId(assistantMessage.id);
+      } catch (persistErr) {
+        rejectAssistantId(persistErr);
+      }
       throw err;
     }
   }

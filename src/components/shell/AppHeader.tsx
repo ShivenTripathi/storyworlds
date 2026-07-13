@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { UserButton } from "@clerk/nextjs";
+import { useAuth, UserButton } from "@clerk/nextjs";
 import { FeedbackWidget } from "@/components/feedback/FeedbackWidget";
 import { SoundToggle } from "@/components/sound/SoundToggle";
 
@@ -23,6 +23,29 @@ const NAV_LINKS: NavLink[] = [
   { href: "/settings", label: "Settings" },
 ];
 
+// 'unknown' while admin status is still resolving (either Clerk itself
+// hasn't loaded, or the /api/me fallback fetch below is in flight).
+type AdminStatus = "unknown" | "admin" | "not-admin";
+
+/**
+ * Reads an app role off the Clerk session claims, if one happens to be
+ * there (e.g. a custom JWT template mirroring `publicMetadata.role`). Our
+ * role today lives only in the `users` table (see src/lib/auth.ts /
+ * requireUser), not on the Clerk session, so this is a forward-compatible
+ * fast path rather than the primary source — it lets a future claims-based
+ * setup skip the network roundtrip below entirely.
+ */
+function roleFromSessionClaims(claims: unknown): string | undefined {
+  if (!claims || typeof claims !== "object") return undefined;
+  const c = claims as Record<string, unknown>;
+  const metadata = c.metadata ?? c.publicMetadata;
+  if (metadata && typeof metadata === "object") {
+    const role = (metadata as Record<string, unknown>).role;
+    if (typeof role === "string") return role;
+  }
+  return typeof c.role === "string" ? c.role : undefined;
+}
+
 /**
  * The app shell's top bar: wordmark, primary nav (Shelf / Discoveries /
  * Settings, plus Admin for admins), and the Clerk account menu. A skip-link
@@ -31,9 +54,22 @@ const NAV_LINKS: NavLink[] = [
  */
 export function AppHeader() {
   const pathname = usePathname();
-  const [isAdmin, setIsAdmin] = useState(false);
+  const { sessionClaims } = useAuth();
+  // Derived synchronously from what Clerk already gave us this render — no
+  // effect needed for this branch, so when it resolves it never causes an
+  // extra render/reflow after paint.
+  const claimRole = roleFromSessionClaims(sessionClaims);
+  const [fetchedStatus, setFetchedStatus] = useState<AdminStatus>("unknown");
 
   useEffect(() => {
+    // Fast path already answered it above — skip the network roundtrip
+    // entirely (nothing to synchronize here, so no setState in this branch).
+    if (claimRole) return;
+
+    // Fallback: our role isn't on the Clerk session, so ask the API. This
+    // is the roundtrip the audit flagged as a post-paint flicker risk — the
+    // Admin <li> below stays mounted (just visually hidden) the whole time
+    // so resolving it can never shift surrounding layout.
     let cancelled = false;
     (async () => {
       try {
@@ -44,19 +80,25 @@ export function AppHeader() {
           data && typeof data === "object" && "user" in data
             ? (data as { user?: { role?: string } }).user?.role
             : undefined;
-        if (!cancelled && role === "admin") setIsAdmin(true);
+        if (!cancelled) {
+          setFetchedStatus(role === "admin" ? "admin" : "not-admin");
+        }
       } catch {
-        // best-effort — the header just omits the Admin link
+        if (!cancelled) setFetchedStatus("not-admin");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [claimRole]);
 
-  const links = isAdmin
-    ? [...NAV_LINKS, { href: "/admin", label: "Admin" }]
-    : NAV_LINKS;
+  const adminStatus: AdminStatus = claimRole
+    ? claimRole === "admin"
+      ? "admin"
+      : "not-admin"
+    : fetchedStatus;
+  const adminActive =
+    pathname === "/admin" || Boolean(pathname?.startsWith("/admin/"));
 
   return (
     <>
@@ -78,7 +120,7 @@ export function AppHeader() {
 
           <nav aria-label="Primary" className="min-w-0">
             <ul className="flex items-center gap-4 sm:gap-6">
-              {links.map((link) => {
+              {NAV_LINKS.map((link) => {
                 const active =
                   pathname === link.href ||
                   Boolean(pathname?.startsWith(`${link.href}/`));
@@ -101,6 +143,32 @@ export function AppHeader() {
                   </li>
                 );
               })}
+              {/* Mounted for 'unknown' too (not just 'admin') so the slot's
+                  width is already reserved — invisible, but taking up
+                  layout space — before we know the answer. That way an
+                  admin session reveals the link with zero reflow instead of
+                  the roundtrip abruptly inserting it after paint. For the
+                  common non-admin case this unmounts entirely once resolved
+                  (a small early shrink, not a jarring pop-in). */}
+              {adminStatus !== "not-admin" && (
+                <li
+                  aria-hidden={adminStatus !== "admin"}
+                  className={adminStatus === "admin" ? undefined : "invisible"}
+                >
+                  <Link
+                    href="/admin"
+                    tabIndex={adminStatus === "admin" ? undefined : -1}
+                    aria-current={adminActive ? "page" : undefined}
+                    className={`rounded-md px-1 py-1 font-ui text-sm transition-colors focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none ${
+                      adminActive
+                        ? "font-medium text-foreground"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    Admin
+                  </Link>
+                </li>
+              )}
             </ul>
           </nav>
         </div>

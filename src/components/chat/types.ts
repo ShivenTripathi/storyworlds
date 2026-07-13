@@ -23,6 +23,35 @@ export class ChatSpoilerGateError extends Error {
   }
 }
 
+/**
+ * A non-2xx chat response the server explained with a `{ error: { code,
+ * message } }` body — covers the daily-quota "at_capacity" (503) case and
+ * "rate_limited"/"limit_reached" (429) cases from src/services/chat.ts,
+ * src/lib/rate-limit.ts, and src/services/entitlements.ts. Callers can
+ * branch on `status`/`code` to show the server's specific, friendly
+ * `message` instead of a generic failure bubble.
+ */
+export class ChatApiError extends Error {
+  readonly status: number;
+  readonly code?: string;
+
+  constructor(status: number, code: string | undefined, message: string) {
+    super(message);
+    this.name = "ChatApiError";
+    this.status = status;
+    this.code = code;
+  }
+}
+
+/** True for responses signalling temporary unavailability (daily quota
+ * exhausted, rate limit hit) rather than a hard failure — worth surfacing
+ * distinctly since "try again shortly/tomorrow" is actionable advice. */
+export function isCapacityError(err: unknown): err is ChatApiError {
+  return (
+    err instanceof ChatApiError && (err.status === 503 || err.status === 429)
+  );
+}
+
 export interface SendChatOptions {
   entityId: string;
   mode: ChatMode;
@@ -86,16 +115,27 @@ export async function sendChatMessage(
 
   if (res.status === 403) {
     const body = (await res.json().catch(() => null)) as {
-      error?: { code?: string };
+      error?: { code?: string; message?: string };
     } | null;
     if (body?.error?.code === "spoiler_gate") {
       throw new ChatSpoilerGateError();
     }
-    throw new Error("This conversation couldn't continue.");
+    throw new ChatApiError(
+      403,
+      body?.error?.code,
+      body?.error?.message ?? "This conversation couldn't continue.",
+    );
   }
 
   if (!res.ok || !res.body) {
-    throw new Error(`Chat request failed (${res.status})`);
+    const body = (await res.json().catch(() => null)) as {
+      error?: { code?: string; message?: string };
+    } | null;
+    throw new ChatApiError(
+      res.status,
+      body?.error?.code,
+      body?.error?.message ?? `Chat request failed (${res.status}).`,
+    );
   }
 
   const reader = res.body.getReader();

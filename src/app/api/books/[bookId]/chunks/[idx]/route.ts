@@ -23,12 +23,18 @@ export async function GET(_req: Request, { params }: Params) {
       throw new ApiError(404, "not_found", "Chunk not found.");
     }
 
-    return NextResponse.json({
-      idx: chunk.idx,
-      pageNumber: chunk.pageNumber,
-      text: chunk.text,
-      totalChunks: book.totalChunks,
-    });
+    return NextResponse.json(
+      {
+        idx: chunk.idx,
+        pageNumber: chunk.pageNumber,
+        text: chunk.text,
+        totalChunks: book.totalChunks,
+      },
+      // Chunk text is immutable per book version, but access is auth-gated
+      // (requireBookAccess above), so this must stay `private` — a shared
+      // cache must never serve one reader's chunk to another.
+      { headers: { "Cache-Control": "private, max-age=3600" } },
+    );
   } catch (e) {
     return handleApiError(e);
   }

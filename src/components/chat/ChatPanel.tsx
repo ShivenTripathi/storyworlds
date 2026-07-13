@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChatSpoilerGateError,
   fetchChatHistory,
+  isCapacityError,
   sendChatMessage,
   type ChatMessage,
   type ChatMode,
@@ -72,6 +73,20 @@ export function ChatPanel({
           m,
         );
         setMessages(loaded);
+        // Non-empty after_ending history can only exist if a prior turn
+        // already passed the spoiler gate (the server rejects the very
+        // first after_ending message without acknowledgeSpoilers) — so
+        // reopening this chat (mode switch, remount, page reload) shouldn't
+        // re-prompt. This mirrors the server: acknowledgement is really a
+        // property of "has this session sent an after_ending message yet."
+        if (m === "after_ending" && loaded.length > 0) {
+          acknowledgedRef.current.after_ending = true;
+        }
+        setConfirmMode(
+          m === "after_ending" && !acknowledgedRef.current.after_ending
+            ? m
+            : null,
+        );
       } catch {
         setMessages([]);
       } finally {
@@ -81,21 +96,13 @@ export function ChatPanel({
     [bookId, entityId],
   );
 
-  // Mode changed — sync with the server (load that mode's history) and,
-  // for a first-time "after the ending" activation, surface the confirm
-  // panel up front, before the reader can type. Both are deliberate syncs
-  // triggered by the `mode` prop, not state derivable from props/state
-  // already in React.
-  /* eslint-disable react-hooks/set-state-in-effect */
+  // Mode changed — sync with the server (load that mode's history, which
+  // also decides whether the confirm panel needs to show — see loadHistory).
+  // Deliberate sync triggered by the `mode` prop, not state derivable from
+  // props/state already in React.
   useEffect(() => {
     void loadHistory(mode);
-    setConfirmMode(
-      mode === "after_ending" && !acknowledgedRef.current.after_ending
-        ? mode
-        : null,
-    );
   }, [mode, loadHistory]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     return () => abortRef.current?.abort();
@@ -134,7 +141,15 @@ export function ChatPanel({
   }, [input]);
 
   const doSend = useCallback(
-    async (text: string, acknowledgeSpoilers?: boolean) => {
+    async (text: string, acknowledgeOverride?: boolean) => {
+      // Once a mode has been acknowledged (see loadHistory/handleConfirmed),
+      // every subsequent send in that mode must keep sending the flag — the
+      // server has no memory of "this session already confirmed" beyond
+      // what each request tells it, so omitting it here is exactly what
+      // caused every after_ending message past the first to re-trip the
+      // spoiler gate.
+      const acknowledgeSpoilers =
+        acknowledgeOverride ?? acknowledgedRef.current[mode];
       const userMsg: LocalMessage = {
         id: localId(),
         role: "user",
@@ -188,6 +203,24 @@ export function ChatPanel({
           );
           pendingSendRef.current = text;
           setConfirmMode(mode);
+        } else if (isCapacityError(err)) {
+          // Daily quota gone (503 at_capacity) or a rate limit tripped (429
+          // rate_limited / limit_reached) — the server already wrote a
+          // specific, actionable message ("resume after the daily reset",
+          // "try again in Ns"); show that instead of the generic wavering
+          // bubble so the reader knows this isn't a random failure.
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    streaming: false,
+                    failed: true,
+                    content: err.message,
+                  }
+                : m,
+            ),
+          );
         } else {
           setMessages((prev) =>
             prev.map((m) =>
