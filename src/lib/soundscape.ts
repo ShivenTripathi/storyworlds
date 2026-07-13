@@ -21,7 +21,7 @@
  * "never autoplay" and `prefers-reduced-motion` defaulting to off.
  */
 
-import { getAudioContext } from "./sound";
+import { ensureAudioRunning, getAudioContext } from "./sound";
 
 export type SoundscapeMood =
   "hearth" | "rain" | "moor" | "candlelit" | "deepspace" | "pastoral";
@@ -576,12 +576,32 @@ function ensureMaster(ac: AudioContext): GainNode {
 
 /** Starts (or crossfades to) a mood. Safe to call while another mood is
  * already playing — the old graph fades out and tears down while the new
- * one fades in, so mood changes never click or pop. Requires a prior user
- * gesture to actually produce sound (the underlying AudioContext is
- * gesture-gated — see sound.ts) but is otherwise synchronous. */
+ * one fades in, so mood changes never click or pop.
+ *
+ * Requires a prior user gesture to actually produce sound (the underlying
+ * AudioContext is gesture-gated — see sound.ts), and on the very first call
+ * of a session that context is typically still `suspended` (iOS Safari, in
+ * particular, only flips it to `running` asynchronously after `resume()`).
+ * Building the synth graph and ramping gains against a still-frozen
+ * `currentTime` in that window schedules everything in what's effectively
+ * the past once the context does start running — the same silent-drop
+ * gotcha `sound.ts`'s `playCue` guards against — so this waits for
+ * `ensureAudioRunning()` before touching the graph. That resolves
+ * synchronously (no visible delay) once a context is already running, which
+ * is the common case for every mood change after the first. */
 export function startSoundscape(mood: SoundscapeMood): void {
   const ac = getAudioContext();
   if (!ac) return;
+  if (ac.state === "running") {
+    beginSoundscape(mood, ac);
+    return;
+  }
+  void ensureAudioRunning().then((running) => {
+    if (running) beginSoundscape(mood, running);
+  });
+}
+
+function beginSoundscape(mood: SoundscapeMood, ac: AudioContext): void {
   const m = ensureMaster(ac);
 
   if (active && active.mood === mood) {

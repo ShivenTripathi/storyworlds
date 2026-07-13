@@ -262,129 +262,157 @@ export function WorldRail({
   const activeTabDef = RAIL_TABS.find((t) => t.id === tab);
 
   return (
-    <div
-      ref={panelRef}
-      tabIndex={-1}
-      role="complementary"
-      aria-label="Story world"
-      aria-hidden={!open}
-      inert={!open ? true : undefined}
-      className={`fixed inset-x-0 bottom-0 z-50 flex h-[72dvh] max-h-[72dvh] flex-col rounded-t-lg border-t transition-transform duration-[250ms] ease-out focus:outline-none motion-reduce:transition-none md:inset-y-0 md:right-0 md:left-auto md:h-full md:max-h-none md:w-[var(--reader-rail-width,340px)] md:rounded-none md:border-t-0 md:border-l ${
-        open
-          ? "translate-y-0 md:translate-x-0"
-          : "translate-y-full md:translate-x-full md:translate-y-0"
-      }`}
-      style={{
-        background: "var(--world-surface)",
-        borderColor: "var(--world-frame)",
-        // The rail is nested inside the reader, which sets color:var(--reader-fg)
-        // (dark in the Paper/Sepia reading themes). Reset to the app foreground
-        // so text stays legible on the dark --world-surface regardless of the
-        // reader's page theme.
-        color: "var(--foreground)",
-      }}
-    >
-      {/* Desktop-only resize handle on the rail's inner (left) edge — the
-          mobile bottom sheet has no horizontal boundary to drag. */}
-      <RailResizeHandle
-        width={width}
-        onWidthChange={onWidthChange}
-        onResizeStart={onResizeStart}
-        onResizeEnd={onResizeEnd}
+    <>
+      {/* Mobile-only scrim behind the bottom sheet — tapping it closes the
+          panel, the standard bottom-sheet dismiss affordance (the desktop
+          rail sits beside the page rather than over it, so it never needs
+          one). Fades with the sheet itself; `inert`/pointer-events keep it
+          out of the way entirely when closed rather than just invisible. */}
+      <div
+        aria-hidden="true"
+        onClick={onClose}
+        className={`fixed inset-0 z-40 touch-manipulation bg-[var(--scrim)] transition-opacity duration-[250ms] ease-out motion-reduce:transition-none md:hidden ${
+          open ? "opacity-100" : "pointer-events-none opacity-0"
+        }`}
       />
-
-      {/* Grab handle — a touch affordance that this bottom sheet is dismissible. */}
-      <div className="flex shrink-0 justify-center pt-2 md:hidden" aria-hidden>
-        <span
-          className="h-1 w-9 rounded-full opacity-40"
-          style={{ background: "var(--world-frame)" }}
+      <div
+        ref={panelRef}
+        tabIndex={-1}
+        role="complementary"
+        aria-label="Story world"
+        aria-hidden={!open}
+        inert={!open ? true : undefined}
+        className={`fixed inset-x-0 bottom-0 z-50 flex h-[72dvh] max-h-[72dvh] flex-col rounded-t-lg border-t transition-transform duration-[250ms] ease-out focus:outline-none motion-reduce:transition-none md:inset-y-0 md:right-0 md:left-auto md:h-full md:max-h-none md:w-[var(--reader-rail-width,340px)] md:rounded-none md:border-t-0 md:border-l ${
+          open
+            ? "translate-y-0 md:translate-x-0"
+            : "translate-y-full md:translate-x-full md:translate-y-0"
+        }`}
+        style={{
+          background: "var(--world-surface)",
+          borderColor: "var(--world-frame)",
+          // The rail is nested inside the reader, which sets color:var(--reader-fg)
+          // (dark in the Paper/Sepia reading themes). Reset to the app foreground
+          // so text stays legible on the dark --world-surface regardless of the
+          // reader's page theme.
+          color: "var(--foreground)",
+        }}
+      >
+        {/* Desktop-only resize handle on the rail's inner (left) edge — the
+          mobile bottom sheet has no horizontal boundary to drag. */}
+        <RailResizeHandle
+          width={width}
+          onWidthChange={onWidthChange}
+          onResizeStart={onResizeStart}
+          onResizeEnd={onResizeEnd}
         />
-      </div>
 
-      <div className="flex shrink-0 items-center justify-between px-4 py-2 md:py-3">
-        <p className="eyebrow">THE WORLD</p>
+        {/* Grab handle — a touch affordance that this bottom sheet is
+          dismissible; also a real (large) tap target that closes it, since a
+          reader's first instinct on a handle like this is often to tap it
+          rather than hunt for the small × button. */}
         <button
           type="button"
           aria-label="Close world panel"
+          tabIndex={-1}
           onClick={onClose}
-          tabIndex={open ? 0 : -1}
-          className="flex h-11 w-11 items-center justify-center rounded-full text-xl opacity-70 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+          className="flex shrink-0 touch-manipulation justify-center pt-2 pb-1 md:hidden"
         >
-          ×
+          <span
+            aria-hidden="true"
+            className="h-1 w-9 rounded-full opacity-40"
+            style={{ background: "var(--world-frame)" }}
+          />
         </button>
-      </div>
 
-      {loaded && railCtx ? (
-        <div
-          role="tablist"
-          aria-label="World panel sections"
-          className="flex shrink-0 items-center gap-4 border-b px-4 pb-2"
-          style={{ borderColor: "var(--world-frame)" }}
-        >
-          {RAIL_TABS.map((t) => (
-            <TabButton
-              key={t.id}
-              id={t.id}
-              label={t.label}
-              active={tab === t.id}
-              onClick={() => setTab(t.id)}
-            />
-          ))}
-        </div>
-      ) : null}
-
-      <div
-        className={
-          activeTabDef?.layout === "fill" && loaded && railCtx
-            ? "flex min-h-0 flex-1 flex-col px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
-            : "min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-[max(2rem,env(safe-area-inset-bottom))]"
-        }
-      >
-        {!loaded ? (
-          <p className="font-ui text-sm text-muted-foreground">
-            Opening the world…
-          </p>
-        ) : railCtx ? (
-          <div
-            role="tabpanel"
-            id={`world-panel-${tab}`}
-            aria-labelledby={`world-tab-${tab}`}
-            className={
-              activeTabDef?.layout === "fill"
-                ? "flex min-h-0 flex-1 flex-col outline-none"
-                : "space-y-6 outline-none"
-            }
+        <div className="flex shrink-0 items-center justify-between px-4 py-2 md:py-3">
+          <p className="eyebrow">THE WORLD</p>
+          <button
+            type="button"
+            aria-label="Close world panel"
+            onClick={onClose}
+            tabIndex={open ? 0 : -1}
+            className="flex h-11 w-11 touch-manipulation items-center justify-center rounded-full text-xl opacity-70 hover:opacity-100 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
           >
-            {activeTabDef?.render(railCtx)}
+            ×
+          </button>
+        </div>
+
+        {loaded && railCtx ? (
+          <div
+            role="tablist"
+            aria-label="World panel sections"
+            className="flex shrink-0 items-center gap-4 border-b px-4 pb-2"
+            style={{ borderColor: "var(--world-frame)" }}
+          >
+            {RAIL_TABS.map((t) => (
+              <TabButton
+                key={t.id}
+                id={t.id}
+                label={t.label}
+                active={tab === t.id}
+                onClick={() => setTab(t.id)}
+              />
+            ))}
           </div>
-        ) : isFailed ? (
-          <WorldFormingCard
-            compact
-            job={job ?? { id: "", status: "failed", progress: 0, error: null }}
-            onRetry={handleAwaken}
-          />
-        ) : isPending ? (
-          <WorldFormingCard
-            compact
-            job={job ?? { id: "", status: "running", progress: 0, stage: null }}
-            onRetry={handleAwaken}
-          />
-        ) : (
-          <div className="space-y-3">
+        ) : null}
+
+        <div
+          className={
+            activeTabDef?.layout === "fill" && loaded && railCtx
+              ? "flex min-h-0 flex-1 flex-col px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
+              : "min-h-0 flex-1 overflow-y-auto px-4 pt-4 pb-[max(2rem,env(safe-area-inset-bottom))]"
+          }
+        >
+          {!loaded ? (
             <p className="font-ui text-sm text-muted-foreground">
-              The world of this book hasn&apos;t awoken yet.
+              Opening the world…
             </p>
-            <button
-              type="button"
-              onClick={() => void handleAwaken()}
-              className="rounded-full bg-[var(--world-accent)] px-4 py-2 font-ui text-xs font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90"
+          ) : railCtx ? (
+            <div
+              role="tabpanel"
+              id={`world-panel-${tab}`}
+              aria-labelledby={`world-tab-${tab}`}
+              className={
+                activeTabDef?.layout === "fill"
+                  ? "flex min-h-0 flex-1 flex-col outline-none"
+                  : "space-y-6 outline-none"
+              }
             >
-              Awaken the world
-            </button>
-          </div>
-        )}
+              {activeTabDef?.render(railCtx)}
+            </div>
+          ) : isFailed ? (
+            <WorldFormingCard
+              compact
+              job={
+                job ?? { id: "", status: "failed", progress: 0, error: null }
+              }
+              onRetry={handleAwaken}
+            />
+          ) : isPending ? (
+            <WorldFormingCard
+              compact
+              job={
+                job ?? { id: "", status: "running", progress: 0, stage: null }
+              }
+              onRetry={handleAwaken}
+            />
+          ) : (
+            <div className="space-y-3">
+              <p className="font-ui text-sm text-muted-foreground">
+                The world of this book hasn&apos;t awoken yet.
+              </p>
+              <button
+                type="button"
+                onClick={() => void handleAwaken()}
+                className="rounded-full bg-[var(--world-accent)] px-4 py-2 font-ui text-xs font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90"
+              >
+                Awaken the world
+              </button>
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 

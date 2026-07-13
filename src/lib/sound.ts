@@ -70,9 +70,31 @@ function ctx(): AudioContext | null {
     master.gain.value = MASTER_GAIN;
     master.connect(audioCtx.destination);
   }
-  // Autoplay policy: the context starts suspended until a user gesture.
-  if (audioCtx.state === "suspended") void audioCtx.resume();
   return audioCtx;
+}
+
+/**
+ * Resolves once `ac` is actually running. iOS Safari (and, more rarely,
+ * other mobile browsers) create every AudioContext `suspended` and only
+ * flip it to `running` asynchronously after `resume()`'s promise settles —
+ * meanwhile `currentTime` stays frozen at its creation-time value. Scheduling
+ * a tone at that frozen `currentTime` *before* awaiting resume() means the
+ * note's start time has already passed by the time the context actually
+ * starts producing audio, and on iOS Safari specifically that silently drops
+ * the note instead of playing it immediately. Every caller in this module
+ * (and `soundscape.ts`, which shares this context) must await this — or
+ * check `state === "running"` — before touching `currentTime`-relative
+ * scheduling. `resume()` still has to be *called* synchronously inside the
+ * user gesture (which every caller here does, via `ctx()`), only the
+ * scheduling has to wait for it to resolve.
+ */
+function ensureRunning(ac: AudioContext): Promise<void> {
+  if (ac.state === "running") return Promise.resolve();
+  return ac.resume().catch(() => {
+    // Some browsers reject resume() outside a "trusted" gesture even though
+    // it was called from one (rapid double-taps, etc) — the next real
+    // gesture's playCue()/startSoundscape() call will retry.
+  });
 }
 
 /**
@@ -86,6 +108,21 @@ function ctx(): AudioContext | null {
  */
 export function getAudioContext(): AudioContext | null {
   return ctx();
+}
+
+/**
+ * Lazily creates (if needed) the shared AudioContext and resolves once it's
+ * actually `running` — the mobile-safe way to schedule anything against
+ * `currentTime` (see `ensureRunning` above). Resolves `null` if Web Audio
+ * isn't supported (or during SSR). Must still be invoked synchronously
+ * within the user gesture the first time (same requirement as
+ * `getAudioContext()`); only the *scheduling* that follows should wait on
+ * the returned promise.
+ */
+export function ensureAudioRunning(): Promise<AudioContext | null> {
+  const ac = ctx();
+  if (!ac) return Promise.resolve(null);
+  return ensureRunning(ac).then(() => ac);
 }
 
 interface ToneOpts {
@@ -171,10 +208,25 @@ const RECIPES: Record<Cue, () => void> = {
   },
 };
 
-/** Plays a cue (no-op when muted, unsupported, or SSR). */
+/**
+ * Plays a cue (no-op when muted, unsupported, or SSR). The common case — the
+ * context is already running from an earlier cue this session — plays
+ * synchronously, so this stays snappy for the frequent tick/press/release
+ * cues. The first-ever cue (context still `suspended`, mid-`resume()`) waits
+ * for it to actually start before scheduling — see `ensureRunning` above for
+ * why skipping that wait silently drops the note on iOS Safari.
+ */
 export function playCue(cue: Cue): void {
   if (!initialized) initSound();
   if (muted) return;
-  if (!ctx()) return;
-  RECIPES[cue]();
+  const ac = ctx();
+  if (!ac) return;
+  if (ac.state === "running") {
+    RECIPES[cue]();
+    return;
+  }
+  void ensureRunning(ac).then(() => {
+    if (muted) return; // the reader may have muted while resume() was pending
+    RECIPES[cue]();
+  });
 }

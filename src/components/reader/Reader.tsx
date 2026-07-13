@@ -468,7 +468,12 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
       "touchstart",
       "pointerdown",
     ];
-    events.forEach((ev) => window.addEventListener(ev, wakeChrome));
+    // Passive: this handler never calls preventDefault, and an explicit
+    // passive listener lets the browser start scrolling/tapping immediately
+    // instead of waiting to see whether it will block the gesture.
+    events.forEach((ev) =>
+      window.addEventListener(ev, wakeChrome, { passive: true }),
+    );
     return () => {
       events.forEach((ev) => window.removeEventListener(ev, wakeChrome));
       if (idleTimer.current) clearTimeout(idleTimer.current);
@@ -678,7 +683,7 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
             aria-label="Toggle story world panel"
             aria-pressed={railOpen}
             onClick={() => setRailOpen((v) => !v)}
-            className="flex h-11 min-w-11 items-center justify-center rounded-full border px-3.5 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
+            className="flex h-11 min-w-11 touch-manipulation items-center justify-center rounded-full border px-3.5 font-ui text-sm focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none"
             style={{
               background: "var(--card)",
               borderColor: "var(--border)",
@@ -701,7 +706,7 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
         type="button"
         aria-label="Previous page"
         onClick={goPrev}
-        className="group fixed top-0 left-0 z-20 flex h-full w-11 items-center justify-start pl-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none focus-visible:ring-inset sm:w-[12%] sm:max-w-16"
+        className="group fixed top-0 left-0 z-20 flex h-full w-11 touch-manipulation items-center justify-start pl-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none focus-visible:ring-inset sm:w-[12%] sm:max-w-16"
       >
         <svg
           width="22"
@@ -726,7 +731,7 @@ export function Reader({ bookId, initialChunk }: ReaderProps) {
         type="button"
         aria-label="Next page"
         onClick={goNext}
-        className="group fixed top-0 right-0 z-20 flex h-full w-11 items-center justify-end pr-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none focus-visible:ring-inset sm:w-[12%] sm:max-w-16"
+        className="group fixed top-0 right-0 z-20 flex h-full w-11 touch-manipulation items-center justify-end pr-2 focus-visible:ring-2 focus-visible:ring-[var(--ring)] focus-visible:outline-none focus-visible:ring-inset sm:w-[12%] sm:max-w-16"
       >
         <svg
           width="22"

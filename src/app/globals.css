@@ -441,6 +441,30 @@ h6 {
   text-rendering: optimizeLegibility;
   font-kerning: normal;
   hyphens: auto;
+  /* Safety net: a single unbroken run (a long URL, a run of caps) that
+     `hyphens: auto` can't find a break point for should wrap rather than
+     push the reading column into horizontal overflow. */
+  overflow-wrap: anywhere;
+}
+
+/* Dictionary hyphenation reads as intended on a wide desktop measure, but on
+   a phone-width column (see the reading column's tap-zone-clearing side
+   padding in Reader.tsx) the same rule fires on nearly every line, producing
+   a hyphen-ladder rag rather than the occasional soft break it's meant to
+   be. Coarse-pointer (touch) devices are almost always the narrow case in
+   practice, so gate on that rather than a raw width breakpoint — a narrow
+   *desktop* window (still fine-pointer) keeps hyphenation, matching how the
+   spread view's own single-column fallback is scoped. Justification is hit
+   even harder at narrow widths (inter-word gaps become rivers with only a
+   handful of words per line), so it's dropped back to ragged-left too. */
+@media (pointer: coarse) {
+  .reader-prose {
+    hyphens: none;
+  }
+  .reader-prose--justify .reader-para {
+    text-align: left;
+    text-justify: auto;
+  }
 }
 
 /* Body paragraphs: first-line indent in the classic book manner, no gap —
