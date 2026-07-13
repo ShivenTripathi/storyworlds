@@ -458,7 +458,7 @@ export function SelectionPopover({
             ))}
           </div>
           {highlightError ? (
-            <p className="mt-2 font-ui text-xs opacity-60">
+            <p role="alert" className="mt-2 font-ui text-xs opacity-60">
               Couldn&apos;t save that highlight. Try again in a moment.
             </p>
           ) : null}
@@ -495,7 +495,7 @@ export function SelectionPopover({
                 {highlightSaving ? "Saving…" : "Save note"}
               </button>
               {highlightError ? (
-                <p className="font-ui text-xs opacity-60">
+                <p role="alert" className="font-ui text-xs opacity-60">
                   Couldn&apos;t save. Try again.
                 </p>
               ) : null}

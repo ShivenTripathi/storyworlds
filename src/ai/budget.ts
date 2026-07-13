@@ -30,7 +30,8 @@ export async function assertBudget(bookId: string): Promise<void> {
     return;
   }
 
-  const budgetUsd = book.tokenBudgetUsd === null ? null : Number(book.tokenBudgetUsd);
+  const budgetUsd =
+    book.tokenBudgetUsd === null ? null : Number(book.tokenBudgetUsd);
   if (budgetUsd === null || !Number.isFinite(budgetUsd)) {
     return;
   }

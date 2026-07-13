@@ -11,6 +11,23 @@ const eslintConfig = defineConfig([
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+      // Guard against stray debug logging; console.warn/error stay allowed
+      // for the "log to stderr, then handle/degrade" pattern used throughout
+      // ai/, services/, and lib/ (e.g. src/lib/api-keys.ts's fire-and-forget
+      // usage touch, src/lib/auth.ts's non-fatal email backfill).
+      "no-console": ["warn", { allow: ["warn", "error"] }],
+    },
+  },
+  // Inngest job handlers deliberately console.log a run summary on each tick
+  // (src/jobs/sweep-*.ts, catalog-ingest.ts) — that's the job's
+  // observability surface (visible in the Inngest dashboard), not stray
+  // debug output, so allow console.log there. Same reasoning for the
+  // one-off CLI scripts in scripts/**, whose entire purpose is to print a
+  // report to stdout.
+  {
+    files: ["src/jobs/**/*.ts", "scripts/**/*.mjs"],
+    rules: {
+      "no-console": ["warn", { allow: ["warn", "error", "log"] }],
     },
   },
   // Strict accessibility for UI code — eslint-config-next ships jsx-a11y at

@@ -43,10 +43,16 @@ function getStripe(): Stripe {
  * attribute the resulting subscription without any prior Stripe customer
  * mapping.
  */
-export async function createCheckoutSession(userId: string): Promise<{ url: string }> {
+export async function createCheckoutSession(
+  userId: string,
+): Promise<{ url: string }> {
   requireBilling();
   if (!env.STRIPE_PRICE_READER) {
-    throw new ApiError(503, "billing_disabled", "No Reader plan price is configured.");
+    throw new ApiError(
+      503,
+      "billing_disabled",
+      "No Reader plan price is configured.",
+    );
   }
 
   const stripe = getStripe();
@@ -69,7 +75,9 @@ export async function createCheckoutSession(userId: string): Promise<{ url: stri
  * customer. Requires an active/former subscription (i.e. a
  * stripeCustomerId on file) — there's nothing to manage otherwise.
  */
-export async function createPortalSession(userId: string): Promise<{ url: string }> {
+export async function createPortalSession(
+  userId: string,
+): Promise<{ url: string }> {
   requireBilling();
   await dbReady;
 
@@ -97,13 +105,24 @@ export async function createPortalSession(userId: string): Promise<{ url: string
 }
 
 /** Verifies and parses a raw webhook payload into a Stripe.Event. */
-export function constructWebhookEvent(rawBody: string, signature: string): Stripe.Event {
+export function constructWebhookEvent(
+  rawBody: string,
+  signature: string,
+): Stripe.Event {
   requireBilling();
   if (!env.STRIPE_WEBHOOK_SECRET) {
-    throw new ApiError(503, "billing_disabled", "Webhook secret not configured.");
+    throw new ApiError(
+      503,
+      "billing_disabled",
+      "Webhook secret not configured.",
+    );
   }
   const stripe = getStripe();
-  return stripe.webhooks.constructEvent(rawBody, signature, env.STRIPE_WEBHOOK_SECRET);
+  return stripe.webhooks.constructEvent(
+    rawBody,
+    signature,
+    env.STRIPE_WEBHOOK_SECRET,
+  );
 }
 
 async function upsertSubscription(row: {
@@ -169,7 +188,9 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
       const session = event.data.object as Stripe.Checkout.Session;
       const userId = session.client_reference_id;
       const customerId =
-        typeof session.customer === "string" ? session.customer : session.customer?.id;
+        typeof session.customer === "string"
+          ? session.customer
+          : session.customer?.id;
       const subscriptionId =
         typeof session.subscription === "string"
           ? session.subscription
@@ -200,7 +221,11 @@ export async function handleWebhookEvent(event: Stripe.Event): Promise<void> {
     case "customer.subscription.updated":
     case "customer.subscription.deleted": {
       const sub = event.data.object as Stripe.Subscription;
-      await syncSubscriptionStatus(sub.id, sub.status, periodEndFromSubscription(sub));
+      await syncSubscriptionStatus(
+        sub.id,
+        sub.status,
+        periodEndFromSubscription(sub),
+      );
       return;
     }
 

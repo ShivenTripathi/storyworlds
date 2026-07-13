@@ -23,7 +23,9 @@ describe("slugifyEntity", () => {
   });
 
   it("uses the correct kind prefix", () => {
-    expect(slugifyEntity("character", "Paul Atreides")).toBe("char:paul-atreides");
+    expect(slugifyEntity("character", "Paul Atreides")).toBe(
+      "char:paul-atreides",
+    );
     expect(slugifyEntity("location", "Arrakeen")).toBe("loc:arrakeen");
     expect(slugifyEntity("object", "Crysknife")).toBe("obj:crysknife");
     expect(slugifyEntity("faction", "Bene Gesserit")).toBe("fac:bene-gesserit");

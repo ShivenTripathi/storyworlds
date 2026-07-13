@@ -323,7 +323,10 @@ export function FeedbackWidget() {
                 </label>
 
                 {error ? (
-                  <p className="mt-3 font-ui text-xs text-[var(--destructive)]">
+                  <p
+                    role="alert"
+                    className="mt-3 font-ui text-xs text-[var(--destructive)]"
+                  >
                     {error}
                   </p>
                 ) : null}

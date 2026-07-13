@@ -6,14 +6,17 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "eslint --max-warnings 0",
+    "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "check:contrast": "node scripts/check-archetype-contrast.mjs",
+    "knip": "knip --include files,dependencies,unlisted,unresolved",
     "test": "vitest run",
     "test:watch": "vitest",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\""
+    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
+    "check": "npm run typecheck && npm run lint && npm run check:contrast && npm run format:check && npm run knip"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
@@ -31,8 +34,7 @@
     "react-dom": "19.2.4",
     "stripe": "^22.3.0",
     "unpdf": "^1.6.2",
-    "zod": "^4.4.3",
-    "zod-to-json-schema": "^3.25.2"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -42,10 +44,10 @@
     "drizzle-kit": "^0.31.10",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "knip": "^6.26.0",
     "prettier": "^3.9.5",
     "prettier-plugin-tailwindcss": "^0.8.0",
     "tailwindcss": "^4",
-    "tsx": "^4.23.0",
     "typescript": "^5",
     "vitest": "^4.1.10"
   }

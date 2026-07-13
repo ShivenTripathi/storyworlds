@@ -44,9 +44,8 @@ async function createPgliteDb() {
 }
 
 declare global {
-   
   var __storyworldsDb: AnyDb | undefined;
-   
+
   var __storyworldsDbPromise: Promise<AnyDb> | undefined;
 }
 

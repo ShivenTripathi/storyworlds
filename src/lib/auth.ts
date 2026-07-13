@@ -1,7 +1,7 @@
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { eq } from "drizzle-orm";
 import { db, dbReady } from "@/db";
-import { books, users } from "@/db/schema";
+import { books, jobs, users } from "@/db/schema";
 import { ApiError } from "@/lib/errors";
 import { env } from "@/lib/env";
 
@@ -36,7 +36,10 @@ export async function requireUser(): Promise<CurrentUser> {
     (sessionClaims as { email_address?: string } | null)?.email_address ??
     null;
 
-  await db.insert(users).values({ id: userId, email: claimEmail }).onConflictDoNothing();
+  await db
+    .insert(users)
+    .values({ id: userId, email: claimEmail })
+    .onConflictDoNothing();
 
   const [row] = await db
     .select({ role: users.role, email: users.email })
@@ -125,4 +128,39 @@ export async function requireBookAccess(
   }
 
   throw new ApiError(403, "forbidden", "You don't have access to this book.");
+}
+
+/**
+ * Loads a job and enforces access: owner or admin only — jobs have no
+ * 'published' concept, so unlike requireBookAccess there is no read-only
+ * public path. Returns 404 (not 403) for both "doesn't exist" and "exists
+ * but isn't yours", so a job ID can't be used to probe for existence.
+ */
+export async function requireJobAccess(jobId: string, userId: string) {
+  if (!UUID_RE.test(jobId)) {
+    throw new ApiError(404, "not_found", "Job not found.");
+  }
+
+  await dbReady;
+
+  const [job] = await db.select().from(jobs).where(eq(jobs.id, jobId)).limit(1);
+  if (!job) {
+    throw new ApiError(404, "not_found", "Job not found.");
+  }
+
+  if (job.userId === userId) {
+    return job;
+  }
+
+  const [user] = await db
+    .select({ role: users.role })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+
+  if (user?.role !== "admin") {
+    throw new ApiError(404, "not_found", "Job not found.");
+  }
+
+  return job;
 }

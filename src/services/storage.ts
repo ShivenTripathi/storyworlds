@@ -25,7 +25,11 @@ class LocalStorageDriver implements StorageDriver {
     return join(this.root, key);
   }
 
-  async put(key: string, data: Uint8Array, _contentType: string): Promise<void> {
+  async put(
+    key: string,
+    data: Uint8Array,
+    _contentType: string,
+  ): Promise<void> {
     const filePath = this.resolve(key);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, data);
@@ -107,9 +111,8 @@ class R2StorageDriver implements StorageDriver {
   }
 
   async deletePrefix(prefix: string): Promise<void> {
-    const { ListObjectsV2Command, DeleteObjectsCommand } = await import(
-      "@aws-sdk/client-s3"
-    );
+    const { ListObjectsV2Command, DeleteObjectsCommand } =
+      await import("@aws-sdk/client-s3");
     const client = await this.clientPromise;
     let continuationToken: string | undefined;
     do {

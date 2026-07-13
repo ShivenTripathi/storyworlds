@@ -22,7 +22,10 @@ export interface CreatedApiKey {
  * Mints a new API key for `userId`. The full key is only ever available at
  * creation time — only its sha256 hash + a display prefix are persisted.
  */
-export async function createApiKey(userId: string, name?: string): Promise<CreatedApiKey> {
+export async function createApiKey(
+  userId: string,
+  name?: string,
+): Promise<CreatedApiKey> {
   await dbReady;
 
   const secret = randomBytes(32).toString("hex");
@@ -35,7 +38,13 @@ export async function createApiKey(userId: string, name?: string): Promise<Creat
     .values({ userId, keyHash, prefix, name: name ?? null })
     .returning();
 
-  return { id: row.id, name: row.name, prefix: row.prefix ?? prefix, key, createdAt: row.createdAt };
+  return {
+    id: row.id,
+    name: row.name,
+    prefix: row.prefix ?? prefix,
+    key,
+    createdAt: row.createdAt,
+  };
 }
 
 export interface ApiKeySummary {
@@ -64,7 +73,10 @@ export async function listApiKeys(userId: string): Promise<ApiKeySummary[]> {
 }
 
 /** Revokes a key (sets revokedAt); no-ops if it doesn't belong to userId. */
-export async function revokeApiKey(userId: string, keyId: string): Promise<void> {
+export async function revokeApiKey(
+  userId: string,
+  keyId: string,
+): Promise<void> {
   await dbReady;
   await db
     .update(apiKeys)
@@ -84,7 +96,9 @@ export interface VerifiedApiKey {
  * Fire-and-forgets a lastUsedAt touch so verification latency isn't coupled
  * to that write.
  */
-export async function verifyApiKey(authHeader: string | null): Promise<VerifiedApiKey> {
+export async function verifyApiKey(
+  authHeader: string | null,
+): Promise<VerifiedApiKey> {
   if (!authHeader?.startsWith("Bearer ")) {
     throw new ApiError(401, "unauthorized", "Missing API key.");
   }
@@ -97,7 +111,11 @@ export async function verifyApiKey(authHeader: string | null): Promise<VerifiedA
   const keyHash = hashKey(key);
 
   const [row] = await db
-    .select({ id: apiKeys.id, userId: apiKeys.userId, revokedAt: apiKeys.revokedAt })
+    .select({
+      id: apiKeys.id,
+      userId: apiKeys.userId,
+      revokedAt: apiKeys.revokedAt,
+    })
     .from(apiKeys)
     .where(and(eq(apiKeys.keyHash, keyHash), isNull(apiKeys.revokedAt)))
     .limit(1);
@@ -110,7 +128,9 @@ export async function verifyApiKey(authHeader: string | null): Promise<VerifiedA
   db.update(apiKeys)
     .set({ lastUsedAt: new Date() })
     .where(eq(apiKeys.id, row.id))
-    .catch((err) => console.error("[api-keys] failed to update lastUsedAt:", err));
+    .catch((err) =>
+      console.error("[api-keys] failed to update lastUsedAt:", err),
+    );
 
   return { userId: row.userId, keyId: row.id };
 }

@@ -64,8 +64,11 @@ export function WorldFormingCard({
               type="button"
               onClick={() => void handleRetry()}
               disabled={retrying}
-              className="font-ui mt-3 rounded-full border px-4 py-1.5 text-xs font-medium disabled:opacity-50"
-              style={{ borderColor: "var(--destructive)", color: "var(--destructive)" }}
+              className="mt-3 rounded-full border px-4 py-1.5 font-ui text-xs font-medium disabled:opacity-50"
+              style={{
+                borderColor: "var(--destructive)",
+                color: "var(--destructive)",
+              }}
             >
               {retrying ? "Trying again…" : "Try again"}
             </button>
@@ -76,12 +79,12 @@ export function WorldFormingCard({
           <QuillGlyph />
           <div className="min-w-0 flex-1">
             <p
-              className={`font-display italic leading-snug ${compact ? "text-sm" : "text-base"}`}
+              className={`font-display leading-snug italic ${compact ? "text-sm" : "text-base"}`}
               style={{ color: "var(--world-accent)" }}
             >
               {job?.stage || "The world is stirring…"}
               {job?.progress != null ? (
-                <span className="font-ui ml-1.5 text-xs not-italic opacity-70">
+                <span className="ml-1.5 font-ui text-xs not-italic opacity-70">
                   {Math.round(progress)}%
                 </span>
               ) : null}
@@ -97,12 +100,15 @@ export function WorldFormingCard({
             >
               <div
                 className="h-full rounded-full transition-[width] duration-500 ease-out"
-                style={{ width: `${progress}%`, background: "var(--world-accent)" }}
+                style={{
+                  width: `${progress}%`,
+                  background: "var(--world-accent)",
+                }}
               />
             </div>
 
             {!compact ? (
-              <p className="font-ui mt-3 text-xs text-muted-foreground italic">
+              <p className="mt-3 font-ui text-xs text-muted-foreground italic">
                 You can keep reading — the world forms alongside you.
               </p>
             ) : null}

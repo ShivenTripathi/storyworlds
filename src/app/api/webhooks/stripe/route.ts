@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { billingConfigured, constructWebhookEvent, handleWebhookEvent } from "@/services/billing";
+import {
+  billingConfigured,
+  constructWebhookEvent,
+  handleWebhookEvent,
+} from "@/services/billing";
 import { ApiError, handleApiError } from "@/lib/errors";
 
 export const dynamic = "force-dynamic";
@@ -14,12 +18,20 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   try {
     if (!billingConfigured()) {
-      throw new ApiError(503, "billing_disabled", "Billing isn't enabled on this deployment.");
+      throw new ApiError(
+        503,
+        "billing_disabled",
+        "Billing isn't enabled on this deployment.",
+      );
     }
 
     const signature = req.headers.get("stripe-signature");
     if (!signature) {
-      throw new ApiError(400, "invalid_request", "Missing stripe-signature header.");
+      throw new ApiError(
+        400,
+        "invalid_request",
+        "Missing stripe-signature header.",
+      );
     }
 
     const rawBody = await req.text();
@@ -29,7 +41,11 @@ export async function POST(req: Request) {
       event = constructWebhookEvent(rawBody, signature);
     } catch (err) {
       console.error("[webhooks/stripe] signature verification failed:", err);
-      throw new ApiError(400, "invalid_signature", "Webhook signature verification failed.");
+      throw new ApiError(
+        400,
+        "invalid_signature",
+        "Webhook signature verification failed.",
+      );
     }
 
     await handleWebhookEvent(event);

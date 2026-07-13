@@ -37,13 +37,13 @@ export function UpgradeTeaser() {
   return (
     <div className="rounded-lg border border-[var(--world-frame)] bg-[var(--world-surface)] p-5">
       <p className="font-display text-lg">The Reader plan</p>
-      <p className="font-ui mt-1 text-sm text-[var(--muted-foreground)]">
+      <p className="mt-1 font-ui text-sm text-[var(--muted-foreground)]">
         Unlimited shelf, more worlds per day — arrives soon.
       </p>
       <button
         onClick={handleUpgrade}
         disabled={state === "loading"}
-        className="font-ui mt-4 rounded-full bg-[var(--world-accent)] px-5 py-2 text-sm font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90 disabled:opacity-60"
+        className="mt-4 rounded-full bg-[var(--world-accent)] px-5 py-2 font-ui text-sm font-medium text-[var(--world-accent-fg)] transition-opacity hover:opacity-90 disabled:opacity-60"
       >
         {state === "loading" ? "One moment…" : "Upgrade"}
       </button>
@@ -55,7 +55,7 @@ function FreeTeaserCopy() {
   return (
     <div className="rounded-lg border border-[var(--world-frame)] bg-[var(--world-surface)] p-5">
       <p className="font-display text-lg">The Reader plan</p>
-      <p className="font-ui mt-1 text-sm text-[var(--muted-foreground)]">
+      <p className="mt-1 font-ui text-sm text-[var(--muted-foreground)]">
         Unlimited shelf, more worlds per day — arrives soon.
       </p>
     </div>

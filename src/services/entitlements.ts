@@ -9,7 +9,7 @@ import {
 } from "@/db/schema";
 import { ApiError } from "@/lib/errors";
 import { env } from "@/lib/env";
-import type { PricingTier } from "@/services/books";
+import { pricingTierForVisibility, type PricingTier } from "@/services/books";
 
 export type Plan = "free" | "reader";
 export type EntitlementAction = "upload" | "chat";
@@ -205,4 +205,30 @@ export async function checkEntitlement(
       : `You've reached today's upload limit (${limit} on the ${plan} plan). Try again tomorrow, or contribute the book to the public library for a much higher allowance, or upgrade for a higher limit.`;
     throw new ApiError(429, "limit_reached", friendly);
   }
+}
+
+/**
+ * Resolves + enforces the shared publish/visibility policy for both upload
+ * paths (JSON and multipart — see src/app/api/books/route.ts): publishing to
+ * the public library REQUIRES a rights attestation (the waiver that lets one
+ * analysis be shared across every reader — see CLAUDE.md "THE MODEL"), and
+ * this is the one place that invariant is enforced server-side. Also runs
+ * the entitlement/quota check (which protects the Gemini free-tier daily
+ * budget — every upload kicks off analysis LLM calls).
+ */
+export async function resolveUploadPolicy(
+  userId: string,
+  visibility: "private" | "published",
+  rightsAttestation: "public_domain" | "owned_contributed" | undefined,
+): Promise<{ pricingTier: PricingTier }> {
+  if (visibility === "published" && !rightsAttestation) {
+    throw new ApiError(
+      400,
+      "attestation_required",
+      "Contributing to the public library requires a rights attestation — confirm the work is public domain, or that you own it and waive exclusive rights.",
+    );
+  }
+  const pricingTier = pricingTierForVisibility(visibility);
+  await checkEntitlement(userId, "upload", { pricingTier });
+  return { pricingTier };
 }

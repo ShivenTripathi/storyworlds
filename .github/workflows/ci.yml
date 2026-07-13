@@ -21,11 +21,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Typecheck
-        run: npx tsc --noEmit
-      - name: Archetype contrast check
-        run: npm run check:contrast
-      - name: Lint
-        run: npx eslint src
+      - name: Check (typecheck + lint + contrast + format + knip)
+        run: npm run check
+      - name: Test
+        run: npx vitest run
       - name: Build
         run: npm run build

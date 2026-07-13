@@ -34,11 +34,15 @@ describe("segmentChunks", () => {
       { idx: 2, text: "c".repeat(50) },
     ];
     const segments = segmentChunks(chunks, 500);
-    const oversizeSeg = segments.find((s) => s.startChunk === 1 && s.endChunk === 1);
+    const oversizeSeg = segments.find(
+      (s) => s.startChunk === 1 && s.endChunk === 1,
+    );
     expect(oversizeSeg).toBeDefined();
     expect(oversizeSeg!.text).toContain("b".repeat(2000));
     // Never split a chunk: full chunk text present in exactly one segment.
-    const occurrences = segments.filter((s) => s.text.includes("b".repeat(2000)));
+    const occurrences = segments.filter((s) =>
+      s.text.includes("b".repeat(2000)),
+    );
     expect(occurrences).toHaveLength(1);
   });
 
@@ -53,7 +57,10 @@ describe("segmentChunks", () => {
   });
 
   it("produces contiguous, gapless segment indexes", () => {
-    const chunks = Array.from({ length: 10 }, (_, i) => ({ idx: i, text: "x".repeat(50) }));
+    const chunks = Array.from({ length: 10 }, (_, i) => ({
+      idx: i,
+      text: "x".repeat(50),
+    }));
     const segments = segmentChunks(chunks, 120);
     segments.forEach((seg, i) => expect(seg.index).toBe(i));
     // startChunk/endChunk cover the full range contiguously

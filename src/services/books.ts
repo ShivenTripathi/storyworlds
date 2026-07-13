@@ -64,6 +64,19 @@ export type PricingTier = "public_subsidized" | "private_premium" | "catalog";
 
 export type RightsAttestation = "public_domain" | "owned_contributed";
 
+/**
+ * The visibility -> pricingTier mapping for user uploads (catalog ingestion
+ * has its own fixed 'catalog' tier — see createBookFromText). Single source
+ * of truth so the two upload paths below, and the route-level policy check
+ * in src/services/entitlements.ts (resolveUploadPolicy), don't each carry
+ * their own copy of this ternary.
+ */
+export function pricingTierForVisibility(
+  visibility: "private" | "published",
+): "public_subsidized" | "private_premium" {
+  return visibility === "published" ? "public_subsidized" : "private_premium";
+}
+
 export interface CreateBookFromUploadInput {
   ownerId: string;
   /** Original uploaded filename — drives format detection + default title. */
@@ -109,9 +122,7 @@ export async function createBookFromUpload({
   title,
   author,
   visibility = "private",
-  pricingTier = visibility === "published"
-    ? "public_subsidized"
-    : "private_premium",
+  pricingTier = pricingTierForVisibility(visibility),
   rightsAttestation = null,
   contributedByUserId = null,
 }: CreateBookFromUploadInput) {
@@ -259,9 +270,7 @@ export async function createBookFromExtracted({
   author,
   pages: rawPages,
   visibility = "private",
-  pricingTier = visibility === "published"
-    ? "public_subsidized"
-    : "private_premium",
+  pricingTier = pricingTierForVisibility(visibility),
   rightsAttestation = null,
   contributedByUserId = null,
 }: CreateBookFromExtractedInput) {

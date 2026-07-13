@@ -12,9 +12,8 @@ import {
   detectBookFormat,
   listBooks,
   toBookDto,
-  type PricingTier,
 } from "@/services/books";
-import { checkEntitlement } from "@/services/entitlements";
+import { resolveUploadPolicy } from "@/services/entitlements";
 
 const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
 // Zip-bomb guard for the gzipped upload path — a hair above the largest
@@ -47,32 +46,6 @@ const extractedSchema = metaSchema.extend({
     .min(1)
     .max(MAX_CHUNKS),
 });
-
-/**
- * Resolves + enforces the shared publish/visibility policy for both upload
- * paths: publishing to the public library REQUIRES a rights attestation (the
- * waiver that lets one analysis be shared across every reader — see CLAUDE.md
- * "THE MODEL"), and this is the one place that invariant is enforced
- * server-side. Also runs the entitlement/quota check (which protects the
- * Gemini free-tier daily budget — every upload kicks off analysis LLM calls).
- */
-async function resolveUploadPolicy(
-  userId: string,
-  visibility: "private" | "published",
-  rightsAttestation: "public_domain" | "owned_contributed" | undefined,
-): Promise<{ pricingTier: PricingTier }> {
-  if (visibility === "published" && !rightsAttestation) {
-    throw new ApiError(
-      400,
-      "attestation_required",
-      "Contributing to the public library requires a rights attestation — confirm the work is public domain, or that you own it and waive exclusive rights.",
-    );
-  }
-  const pricingTier: PricingTier =
-    visibility === "published" ? "public_subsidized" : "private_premium";
-  await checkEntitlement(userId, "upload", { pricingTier });
-  return { pricingTier };
-}
 
 export async function POST(req: NextRequest) {
   try {

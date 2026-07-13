@@ -253,7 +253,7 @@ export function NotebookMenu({
                 {searchState.status === "loading" ? (
                   <p className="font-ui text-sm opacity-60">Searching…</p>
                 ) : searchState.status === "error" ? (
-                  <p className="font-ui text-sm opacity-60">
+                  <p role="alert" className="font-ui text-sm opacity-60">
                     Couldn&apos;t search right now. Try again in a moment.
                   </p>
                 ) : searchState.status === "ready" ? (

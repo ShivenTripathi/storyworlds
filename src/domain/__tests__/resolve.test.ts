@@ -38,23 +38,34 @@ describe("resolveEntityName", () => {
   ]);
 
   it("resolves an exact hit", () => {
-    expect(resolveEntityName("Elijah Baley", index)).toEqual({ entityId: "char:baley" });
+    expect(resolveEntityName("Elijah Baley", index)).toEqual({
+      entityId: "char:baley",
+    });
   });
 
   it("resolves a possessive form", () => {
-    expect(resolveEntityName("Baley's", index)).toEqual({ entityId: "char:baley" });
+    expect(resolveEntityName("Baley's", index)).toEqual({
+      entityId: "char:baley",
+    });
   });
 
   it("strips honorifics", () => {
-    expect(resolveEntityName("Dr. Fastolfe", index)).toEqual({ entityId: "char:fastolfe" });
+    expect(resolveEntityName("Dr. Fastolfe", index)).toEqual({
+      entityId: "char:fastolfe",
+    });
   });
 
   it("resolves via full-name containment (initial ignored)", () => {
-    expect(resolveEntityName("R. Daneel Olivaw", index)).toEqual({ entityId: "char:daneel" });
+    expect(resolveEntityName("R. Daneel Olivaw", index)).toEqual({
+      entityId: "char:daneel",
+    });
   });
 
   it("reports ambiguous when two entities share an alias", () => {
-    expect(resolveEntityName("Paul", index)).toEqual({ unresolved: "Paul", reason: "ambiguous" });
+    expect(resolveEntityName("Paul", index)).toEqual({
+      unresolved: "Paul",
+      reason: "ambiguous",
+    });
   });
 
   it("reports unknown for names with no match", () => {
@@ -98,7 +109,11 @@ describe("buildAliasIndex", () => {
 
 describe("derivedAliases", () => {
   it("returns full/last/first for multi-word names", () => {
-    expect(derivedAliases("Paul Atreides")).toEqual(["Paul Atreides", "Atreides", "Paul"]);
+    expect(derivedAliases("Paul Atreides")).toEqual([
+      "Paul Atreides",
+      "Atreides",
+      "Paul",
+    ]);
   });
 
   it("returns just the name for single-word names", () => {

@@ -46,7 +46,10 @@ export interface RateLimitOptions {
  * `user:${userId}:chat` or `ip:${ip}:v1`). Throws a 429 ApiError once `max`
  * calls have been made within the current `windowSeconds` window.
  */
-export function rateLimit(key: string, { windowSeconds, max }: RateLimitOptions): void {
+export function rateLimit(
+  key: string,
+  { windowSeconds, max }: RateLimitOptions,
+): void {
   const now = Date.now();
   sweep(now);
 
@@ -59,7 +62,9 @@ export function rateLimit(key: string, { windowSeconds, max }: RateLimitOptions)
   }
 
   if (existing.count >= max) {
-    const retryAfterSeconds = Math.ceil((existing.windowStart + windowMs - now) / 1000);
+    const retryAfterSeconds = Math.ceil(
+      (existing.windowStart + windowMs - now) / 1000,
+    );
     throw new ApiError(
       429,
       "rate_limited",

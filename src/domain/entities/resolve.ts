@@ -40,10 +40,7 @@ const HONORIFICS = [
  * trailing possessive 's.
  */
 export function normalizeAlias(s: string): string {
-  let out = s
-    .normalize("NFKD")
-    .replace(COMBINING_MARKS_RE, "")
-    .toLowerCase();
+  let out = s.normalize("NFKD").replace(COMBINING_MARKS_RE, "").toLowerCase();
 
   // Strip a trailing possessive: "baley's" -> "baley", "atreides'" -> "atreides"
   out = out.replace(/['’]s\b/g, "").replace(/['’]\s*$/g, "");
@@ -115,7 +112,10 @@ function stripHonorific(normName: string): string | null {
  *     ONLY if exactly one such key exists; if multiple, report ambiguous.
  *  4. Otherwise, unresolved/unknown. Never guesses beyond this.
  */
-export function resolveEntityName(name: string, index: AliasIndex): ResolveResult {
+export function resolveEntityName(
+  name: string,
+  index: AliasIndex,
+): ResolveResult {
   const norm = normalizeAlias(name);
   if (!norm) return { unresolved: name, reason: "unknown" };
 

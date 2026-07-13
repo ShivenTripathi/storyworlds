@@ -59,7 +59,9 @@ async function recordImageUsage(opts: {
   }
 }
 
-async function generateWithPollinations(prompt: string): Promise<GeneratedImage | null> {
+async function generateWithPollinations(
+  prompt: string,
+): Promise<GeneratedImage | null> {
   try {
     const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?width=1024&height=640&nologo=true`;
     const res = await fetch(url, {
@@ -75,7 +77,12 @@ async function generateWithPollinations(prompt: string): Promise<GeneratedImage 
     }
     const contentType = res.headers.get("content-type") ?? "image/jpeg";
     const buf = new Uint8Array(await res.arrayBuffer());
-    return { data: buf, contentType, provider: "pollinations", model: "pollinations" };
+    return {
+      data: buf,
+      contentType,
+      provider: "pollinations",
+      model: "pollinations",
+    };
   } catch (err) {
     warnOnce(
       "pollinations",
@@ -85,9 +92,15 @@ async function generateWithPollinations(prompt: string): Promise<GeneratedImage 
   }
 }
 
-async function generateWithGemini(model: string, prompt: string): Promise<GeneratedImage | null> {
+async function generateWithGemini(
+  model: string,
+  prompt: string,
+): Promise<GeneratedImage | null> {
   if (!env.GOOGLE_API_KEY) {
-    warnOnce("gemini-image", "[ai/image] MODEL_IMAGE is gemini:* but GOOGLE_API_KEY is unset — skipping image generation");
+    warnOnce(
+      "gemini-image",
+      "[ai/image] MODEL_IMAGE is gemini:* but GOOGLE_API_KEY is unset — skipping image generation",
+    );
     return null;
   }
 
@@ -115,7 +128,10 @@ async function generateWithGemini(model: string, prompt: string): Promise<Genera
       }
     }
 
-    warnOnce("gemini-image", "[ai/image] Gemini image response had no inlineData part");
+    warnOnce(
+      "gemini-image",
+      "[ai/image] Gemini image response had no inlineData part",
+    );
     return null;
   } catch (err) {
     // Covers quota exhaustion, permission errors (image gen is paid-only on
@@ -148,7 +164,11 @@ export async function generateSceneImage(
   if (slot === "pollinations") {
     const image = await generateWithPollinations(prompt);
     if (image) {
-      await recordImageUsage({ ...opts, provider: image.provider, model: image.model });
+      await recordImageUsage({
+        ...opts,
+        provider: image.provider,
+        model: image.model,
+      });
     }
     return image;
   }
@@ -157,11 +177,18 @@ export async function generateSceneImage(
     const model = slot.slice("gemini:".length);
     const image = await generateWithGemini(model, prompt);
     if (image) {
-      await recordImageUsage({ ...opts, provider: image.provider, model: image.model });
+      await recordImageUsage({
+        ...opts,
+        provider: image.provider,
+        model: image.model,
+      });
     }
     return image;
   }
 
-  warnOnce(`unknown-${slot}`, `[ai/image] unknown MODEL_IMAGE slot "${slot}" — skipping image generation`);
+  warnOnce(
+    `unknown-${slot}`,
+    `[ai/image] unknown MODEL_IMAGE slot "${slot}" — skipping image generation`,
+  );
   return null;
 }

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": [
+    // Not currently rendered anywhere (no import site as of 2026-07), but
+    // deliberately kept: it's the canonical spoiler-veil component (blur +
+    // "reveal spoiler" tap target) that src/components/world/CastList.tsx
+    // currently duplicates inline instead of importing. Treat this as the
+    // consolidation target, not dead code — confirm with the author before
+    // deleting.
+    "src/components/world/SpoilerVeil.tsx",
+  ],
+}

@@ -18,7 +18,10 @@ function isTerminal(status: Job["status"]): boolean {
  * EventSource isn't available). Stops on terminal status and cleans up
  * on unmount / jobId change.
  */
-export function useJob(jobId: string | null): { job: Job | null; done: boolean } {
+export function useJob(jobId: string | null): {
+  job: Job | null;
+  done: boolean;
+} {
   const [job, setJob] = useState<Job | null>(null);
   const [done, setDone] = useState(false);
 

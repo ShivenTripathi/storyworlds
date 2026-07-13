@@ -60,18 +60,34 @@ export async function fetchChatHistory(
  */
 export async function sendChatMessage(
   bookId: string,
-  { entityId, mode, message, chunkIdx, acknowledgeSpoilers, signal, onDelta }: SendChatOptions,
+  {
+    entityId,
+    mode,
+    message,
+    chunkIdx,
+    acknowledgeSpoilers,
+    signal,
+    onDelta,
+  }: SendChatOptions,
 ): Promise<void> {
   const res = await fetch(`/api/books/${bookId}/chat`, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ entityId, mode, message, chunkIdx, acknowledgeSpoilers }),
+    body: JSON.stringify({
+      entityId,
+      mode,
+      message,
+      chunkIdx,
+      acknowledgeSpoilers,
+    }),
     signal,
   });
 
   if (res.status === 403) {
-    const body = (await res.json().catch(() => null)) as { error?: { code?: string } } | null;
+    const body = (await res.json().catch(() => null)) as {
+      error?: { code?: string };
+    } | null;
     if (body?.error?.code === "spoiler_gate") {
       throw new ChatSpoilerGateError();
     }

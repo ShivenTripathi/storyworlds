@@ -12,7 +12,10 @@ describe("OverlaySchema", () => {
     };
     const result = OverlaySchema.parse(payload);
     expect(result.sceneDescription).toBe(payload.sceneDescription);
-    expect(result.activeEntities).toEqual([{ name: "Paul Atreides" }, { name: "Chani" }]);
+    expect(result.activeEntities).toEqual([
+      { name: "Paul Atreides" },
+      { name: "Chani" },
+    ]);
     expect(result.mood).toBe("tense anticipation");
     expect(result.suggestedQuestions).toEqual(payload.suggestedQuestions);
   });

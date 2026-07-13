@@ -30,7 +30,11 @@ export async function POST(req: Request) {
     const json = await req.json().catch(() => ({}));
     const parsed = createSchema.safeParse(json);
     if (!parsed.success) {
-      throw new ApiError(400, "invalid_request", "Invalid body: expected { name? }.");
+      throw new ApiError(
+        400,
+        "invalid_request",
+        "Invalid body: expected { name? }.",
+      );
     }
 
     const created = await createApiKey(userId, parsed.data.name);

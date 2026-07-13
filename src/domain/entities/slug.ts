@@ -46,9 +46,7 @@ function cleanSlugBody(name: string): string {
     .replace(COMBINING_MARKS_RE, "")
     .toLowerCase();
 
-  const dashed = normalized
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
+  const dashed = normalized.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
   return dashed.slice(0, MAX_SLUG_BODY_LENGTH).replace(/-+$/g, "");
 }

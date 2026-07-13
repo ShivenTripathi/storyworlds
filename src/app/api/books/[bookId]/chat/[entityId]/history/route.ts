@@ -21,7 +21,9 @@ export async function GET(req: Request, { params }: Params) {
     await requireBookAccess(bookId, userId);
 
     const url = new URL(req.url);
-    const parsed = querySchema.safeParse({ mode: url.searchParams.get("mode") });
+    const parsed = querySchema.safeParse({
+      mode: url.searchParams.get("mode"),
+    });
     if (!parsed.success) {
       throw new ApiError(
         400,
@@ -32,7 +34,12 @@ export async function GET(req: Request, { params }: Params) {
 
     // Read-only lookup — a GET must not have the side effect of creating a
     // chat session just by being polled.
-    const session = await findSession(userId, bookId, entityId, parsed.data.mode);
+    const session = await findSession(
+      userId,
+      bookId,
+      entityId,
+      parsed.data.mode,
+    );
     if (!session) {
       return NextResponse.json({ messages: [] });
     }

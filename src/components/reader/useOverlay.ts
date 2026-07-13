@@ -50,9 +50,9 @@ export function useOverlay(
   // Holds the latest `runFetch` so the recursive poll timeout below can call
   // it without referencing the `const` before its declaration finishes
   // (and without re-registering the timeout every render).
-  const runFetchRef = useRef<(idx: number, seq: number, attempt: number) => void>(
-    () => {},
-  );
+  const runFetchRef = useRef<
+    (idx: number, seq: number, attempt: number) => void
+  >(() => {});
 
   const runFetch = useCallback(
     (idx: number, seq: number, attempt: number) => {
@@ -60,7 +60,10 @@ export function useOverlay(
         .then((res) => {
           if (requestSeq.current !== seq) return; // stale
           if (res.overlay) {
-            const ready: OverlayState = { status: "ready", overlay: res.overlay };
+            const ready: OverlayState = {
+              status: "ready",
+              overlay: res.overlay,
+            };
             cacheRef.current.set(idx, ready);
             setState(ready);
             return;
