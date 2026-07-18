@@ -32,8 +32,8 @@ function isCharacter(entity: WorldEntity): boolean {
 // sheet under ~900px, sized by height, not width).
 // ---------------------------------------------------------------------------
 
-export const RAIL_WIDTH_MIN = 320;
-export const RAIL_WIDTH_MAX = 640;
+const RAIL_WIDTH_MIN = 320;
+const RAIL_WIDTH_MAX = 640;
 export const RAIL_WIDTH_DEFAULT = 340;
 
 const RAIL_WIDTH_STORAGE_KEY = "sw-rail-width";

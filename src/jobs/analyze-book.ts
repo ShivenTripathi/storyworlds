@@ -84,7 +84,7 @@ const SEGMENT_CONCURRENCY = 2;
  *              anchors through to the synthesis prompt, which now requires
  *              introducedAtPage/approxPage on every entity/timeline entry.
  */
-export const PIPELINE_VERSION = 2;
+const PIPELINE_VERSION = 2;
 
 function truncate(
   s: string | undefined,
@@ -306,7 +306,7 @@ async function persistWorld(
  * `stepRunner`. The Inngest-wrapped function below injects `step.run` as the
  * runner for durable, resumable execution.
  */
-export async function runAnalysis(
+async function runAnalysis(
   bookId: string,
   jobId: string,
   stepRunner: StepRunner = defaultStepRunner,

@@ -41,7 +41,7 @@ export interface EntityCandidate {
   aliases: string[];
 }
 
-export interface RelevantEntity {
+interface RelevantEntity {
   name: string;
   role?: string;
 }

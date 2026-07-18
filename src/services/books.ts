@@ -22,7 +22,6 @@ import {
 } from "@/db/schema";
 import { ApiError } from "@/lib/errors";
 import {
-  ACCEPTED_UPLOAD_EXTENSIONS,
   chunkPlainText,
   countWords,
   decodeTextFile,
@@ -31,6 +30,7 @@ import {
   titleFromFilename,
   type BookSourceFormat,
 } from "@/domain/book-format";
+import { escapeLikePattern } from "@/domain/like";
 import { FunFactsSchema, type FunFacts } from "@/domain/schemas";
 import {
   computeStreaks,
@@ -43,14 +43,6 @@ import { storage } from "@/services/storage";
 
 const CHUNK_INSERT_BATCH_SIZE = 100;
 
-// Format detection + text chunking are pure and now live in the domain layer
-// (src/domain/book-format.ts) so the browser can run them too — the upload
-// UI extracts client-side and posts already-extracted text, sidestepping
-// Vercel's 4.5MB serverless request-body limit. Re-exported here for the
-// server-side callers (upload route, catalog ingestion) that already import
-// them from this module.
-export { ACCEPTED_UPLOAD_EXTENSIONS, detectBookFormat, type BookSourceFormat };
-
 /**
  * Visibility/monetization model (see CLAUDE.md "THE MODEL"):
  *  - 'public_subsidized': uploader waived rights (rightsAttestation set),
@@ -62,7 +54,7 @@ export { ACCEPTED_UPLOAD_EXTENSIONS, detectBookFormat, type BookSourceFormat };
  */
 export type PricingTier = "public_subsidized" | "private_premium" | "catalog";
 
-export type RightsAttestation = "public_domain" | "owned_contributed";
+type RightsAttestation = "public_domain" | "owned_contributed";
 
 /**
  * The visibility -> pricingTier mapping for user uploads (catalog ingestion
@@ -226,7 +218,7 @@ export async function createBookFromUpload({
 }
 
 /** A single extracted page as posted by the client-side extractor. */
-export interface ExtractedPage {
+interface ExtractedPage {
   pageNum: number;
   text: string;
 }
@@ -652,6 +644,7 @@ export interface ListPublishedResult {
 
 const DEFAULT_PUBLISHED_PAGE_SIZE = 24;
 const MAX_PUBLISHED_PAGE_SIZE = 60;
+const MAX_PUBLISHED_QUERY_CHARS = 200;
 
 /**
  * Published books, newest first — the Discover feed. The catalog is
@@ -672,9 +665,11 @@ export async function listPublished(
   const offset = Math.max(0, opts.offset ?? 0);
 
   const conditions = [eq(books.visibility, "published")];
-  const q = opts.q?.trim();
+  // Escape + cap like the in-book search (src/services/annotations.ts) so a
+  // literal `%`/`_` matches literally and pathological patterns stay cheap.
+  const q = opts.q?.trim().slice(0, MAX_PUBLISHED_QUERY_CHARS);
   if (q) {
-    const pattern = `%${q}%`;
+    const pattern = `%${escapeLikePattern(q)}%`;
     conditions.push(
       or(ilike(books.title, pattern), ilike(books.author, pattern))!,
     );

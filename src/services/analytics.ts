@@ -52,7 +52,7 @@ function activeIdsOf(row: { activeEntityIds: unknown }): string[] {
 // getReaderStats — across every book the caller has ever opened
 // ---------------------------------------------------------------------------
 
-export interface MostChattedCharacter {
+interface MostChattedCharacter {
   bookId: string;
   entityId: string;
   name: string;
@@ -216,7 +216,7 @@ export async function getReaderStats(userId: string): Promise<ReaderStatsDto> {
 // docs/analytics-plan.md's "reading time" gap).
 const ASSUMED_WORDS_PER_MINUTE = 200;
 
-export interface BookStatsDto {
+interface BookStatsDto {
   /** min(frontierChunk+1, totalChunks) / totalChunks, as a whole percent. */
   progressPercent: number;
   /** 1-based furthest page the reader has reached (their frontier). */
@@ -234,6 +234,9 @@ export interface BookStatsDto {
  * Per-book stats strip: progress, cast met vs total (frontier-gated), scenes
  * unlocked, chat activity, and a rough time-to-finish. A fixed handful of
  * queries regardless of book length.
+ *
+ * @public No caller yet — reserved as the data source for the planned
+ * share-card flow (see src/components/share/README.md).
  */
 export async function getBookStats(
   userId: string,
@@ -327,7 +330,7 @@ export async function getBookStats(
 // getCodexForBook — the gamified card collection
 // ---------------------------------------------------------------------------
 
-export interface CodexCardLocked {
+interface CodexCardLocked {
   state: "locked";
   /** Safe to expose: doesn't identify WHICH entity, just its category. */
   kind: string;
@@ -353,7 +356,7 @@ export interface CodexCardRevealed {
   slot: number;
 }
 
-export type CodexCard = CodexCardLocked | CodexCardRevealed;
+type CodexCard = CodexCardLocked | CodexCardRevealed;
 
 export interface CodexDto {
   cards: CodexCard[];
@@ -543,7 +546,7 @@ export async function getCodexForBook(
 // 500 req/day, not 1500 (see src/services/queue.ts).
 const GEMINI_FREE_TIER_RPD = 500;
 
-export interface CostByBookDay {
+interface CostByBookDay {
   bookId: string | null;
   day: string;
   costUsd: number;
@@ -685,7 +688,7 @@ interface StoryTimelineItem {
   [key: string]: unknown;
 }
 
-export interface StoryInsightNode {
+interface StoryInsightNode {
   id: string;
   name: string;
   kind: string;
@@ -701,14 +704,14 @@ export interface StoryInsightNode {
   keyEvents: string[];
 }
 
-export interface StoryInsightEdge {
+interface StoryInsightEdge {
   source: string;
   target: string;
   /** Number of pages the two entities share a scene on. */
   weight: number;
 }
 
-export interface StoryInsightTimelineEntry {
+interface StoryInsightTimelineEntry {
   label: string;
   summary: string;
   /** 1-based page, as emitted by synthesis; null only in an owner/admin full
@@ -986,7 +989,7 @@ export async function getStoryInsights(
 // getCollectionOverview — per-book completion, for the shelf cross-view
 // ---------------------------------------------------------------------------
 
-export interface CollectionOverviewItem {
+interface CollectionOverviewItem {
   bookId: string;
   title: string;
   themeArchetype: string | null;
@@ -1073,7 +1076,7 @@ export async function getCollectionOverview(
 /** Weeks shown in the GitHub-contribution-style heatmap grid. */
 const HEATMAP_WEEKS = 53;
 
-export interface ReadingActivityDay {
+interface ReadingActivityDay {
   /** UTC calendar day, 'YYYY-MM-DD'. */
   day: string;
   wordsRead: number;

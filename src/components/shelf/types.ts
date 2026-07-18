@@ -4,9 +4,9 @@
  * on src/services or src/db — it only describes the wire shape.
  */
 
-export type BookStatus = "uploaded" | "extracting" | "ready" | "failed";
+type BookStatus = "uploaded" | "extracting" | "ready" | "failed";
 
-export interface BookProgress {
+interface BookProgress {
   currentChunk: number;
   frontierChunk: number;
   percent: number;

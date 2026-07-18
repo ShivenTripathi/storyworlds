@@ -6,6 +6,10 @@ import { ApiError } from "@/lib/errors";
 
 const KEY_PREFIX = "sw_live_";
 
+/** Ceiling on live (non-revoked) keys per user — keeps a scripted caller from
+ * inserting unbounded rows. */
+const MAX_ACTIVE_KEYS_PER_USER = 10;
+
 function hashKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
 }
@@ -27,6 +31,18 @@ export async function createApiKey(
   name?: string,
 ): Promise<CreatedApiKey> {
   await dbReady;
+
+  const active = await db
+    .select({ id: apiKeys.id })
+    .from(apiKeys)
+    .where(and(eq(apiKeys.userId, userId), isNull(apiKeys.revokedAt)));
+  if (active.length >= MAX_ACTIVE_KEYS_PER_USER) {
+    throw new ApiError(
+      409,
+      "too_many_keys",
+      `You already have ${MAX_ACTIVE_KEYS_PER_USER} active keys — revoke one first.`,
+    );
+  }
 
   const secret = randomBytes(32).toString("hex");
   const key = `${KEY_PREFIX}${secret}`;
@@ -96,7 +112,7 @@ export interface VerifiedApiKey {
  * Fire-and-forgets a lastUsedAt touch so verification latency isn't coupled
  * to that write.
  */
-export async function verifyApiKey(
+async function verifyApiKey(
   authHeader: string | null,
 ): Promise<VerifiedApiKey> {
   if (!authHeader?.startsWith("Bearer ")) {

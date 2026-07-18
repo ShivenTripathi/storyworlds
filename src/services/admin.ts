@@ -17,9 +17,9 @@ import {
  *  - 'private': visibility='private' — never surfaced outside this
  *    admin-only view (or the owner's own shelf).
  */
-export type AdminBookClass = "catalog" | "contribution" | "private";
+type AdminBookClass = "catalog" | "contribution" | "private";
 
-export interface AdminBookRow {
+interface AdminBookRow {
   id: string;
   title: string;
   owner: string | null;

@@ -144,7 +144,7 @@ async function loadAnalysisCandidates(): Promise<AnalysisCandidateInput[]> {
  * any), enqueue its analysis. Never throws — the Inngest function wraps
  * this in a step so a transient DB hiccup just gets retried by Inngest.
  */
-export async function sweepAnalysisOnce(): Promise<SweepAnalysisResult> {
+async function sweepAnalysisOnce(): Promise<SweepAnalysisResult> {
   await dbReady;
 
   // Reclaim stalled jobs first (always — even when readers are active) so dead

@@ -11,7 +11,7 @@
 /** Sentinel value stored in the alias index when an alias is claimed by 2+ distinct entities. */
 export const AMBIGUOUS = Symbol.for("sw.ambiguous");
 
-export type AliasIndexValue = string | typeof AMBIGUOUS;
+type AliasIndexValue = string | typeof AMBIGUOUS;
 
 export type AliasIndex = Map<string, AliasIndexValue>;
 

@@ -3,7 +3,7 @@
 // POST /api/books/{id}/analyze, GET /api/jobs/{id}(/stream), and
 // GET /api/books/{id}/world.
 
-export type JobStatus = "queued" | "running" | "completed" | "failed";
+type JobStatus = "queued" | "running" | "completed" | "failed";
 
 export interface Job {
   id: string;
@@ -13,11 +13,9 @@ export interface Job {
   error?: string | null;
 }
 
-export type WorldStatus = "none" | "pending" | "completed" | "failed";
+type WorldStatus = "none" | "pending" | "completed" | "failed";
 
-export type EntityKind = "character" | "place" | "object" | "faction";
-
-export interface EntityAttributes {
+interface EntityAttributes {
   /** A fuller 2-3 sentence introduction of who this entity is as
    * introduced — not frontier-gated, unlike the inner-life fields below. */
   description?: string;
@@ -75,13 +73,13 @@ export interface DossierData {
   relationships: DossierRelationship[];
 }
 
-export interface TimelineEntry {
+interface TimelineEntry {
   label: string;
   summary: string;
   approxPage?: number;
 }
 
-export interface WorldVisualStyle {
+interface WorldVisualStyle {
   artStyle?: string;
   mood?: string;
   eraSetting?: string;
@@ -123,7 +121,7 @@ export interface ApiErrorBody {
 // Scene overlays — GET /api/books/{id}/overlays/{idx}
 // ---------------------------------------------------------------------------
 
-export interface OverlayActiveEntity {
+interface OverlayActiveEntity {
   id: string;
   name: string;
   kind: string;

@@ -7,7 +7,7 @@ import { useEffect, useId, useRef, useState } from "react";
  * accent glyph for. Keep in sync with ACHIEVEMENT_KINDS in
  * src/app/api/og/achievement/route.tsx.
  */
-export type AchievementKind =
+type AchievementKind =
   | "full-cast"
   | "deep-reader"
   | "streak"

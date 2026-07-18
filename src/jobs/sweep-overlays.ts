@@ -119,7 +119,7 @@ async function runWithConcurrency<T>(
  * analyze-book.ts), so the two sweepers stay mutually exclusive in time to
  * keep total concurrent Gemini calls at or under 3 system-wide.
  */
-export async function sweepOverlaysOnce(): Promise<SweepOverlaysResult> {
+async function sweepOverlaysOnce(): Promise<SweepOverlaysResult> {
   await dbReady;
 
   if (await isReaderActive()) {

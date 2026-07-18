@@ -1,13 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { dbReady } from "@/db";
+import { isHighlightColor } from "@/domain/highlights";
 import { requireBookAccess, requireUser } from "@/lib/auth";
 import { ApiError, handleApiError } from "@/lib/errors";
-import {
-  deleteHighlight,
-  isHighlightColor,
-  updateHighlight,
-} from "@/services/annotations";
+import { deleteHighlight, updateHighlight } from "@/services/annotations";
 
 type Params = { params: Promise<{ bookId: string; id: string }> };
 

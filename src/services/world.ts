@@ -14,7 +14,7 @@ import { pageToChunkIdx } from "@/domain/schemas";
 import { inngest } from "@/jobs/client";
 import { storage } from "@/services/storage";
 
-export interface WorldEntityDto {
+interface WorldEntityDto {
   id: string;
   name: string;
   kind: string;
@@ -23,7 +23,7 @@ export interface WorldEntityDto {
   introducedAtChunk: number | null;
 }
 
-export interface WorldJobDto {
+interface WorldJobDto {
   id: string;
   status: string | null;
   progress: number | null;
@@ -184,14 +184,14 @@ export async function getWorldForReader(opts: {
 }
 
 /** A framed scene illustration featuring the character (earliest within frontier). */
-export interface DossierVisual {
+interface DossierVisual {
   imageUrl: string | null;
   caption: string | null;
   page: number | null; // 1-based page the illustrated scene is drawn from
 }
 
 /** Where in the read-so-far book the character is active. */
-export interface DossierAppearances {
+interface DossierAppearances {
   pageCount: number; // number of pages (overlays) they're active on, within frontier
   firstPage: number | null; // 1-based
   lastPage: number | null; // 1-based
@@ -201,7 +201,7 @@ export interface DossierAppearances {
 }
 
 /** Another entity the character shares scenes with, ranked by shared pages. */
-export interface DossierRelationship {
+interface DossierRelationship {
   id: string;
   name: string;
   kind: string;

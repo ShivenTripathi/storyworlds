@@ -12,7 +12,7 @@
  * everything else (including chat) along with it.
  */
 
-export type RateLimitKind = "none" | "transient" | "daily";
+type RateLimitKind = "none" | "transient" | "daily";
 
 export interface RateLimitInfo {
   kind: RateLimitKind;

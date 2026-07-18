@@ -20,34 +20,13 @@ import {
 import { BACKGROUND_BUDGET } from "@/domain/quota";
 import { getQuota } from "@/services/quota";
 
-export interface FreeTierHeadroom {
+interface FreeTierHeadroom {
   requestsToday: number;
   dailyLimit: number;
   /** Percent of the BACKGROUND slice (see src/services/quota.ts) still
    * remaining — 0% means the sweepers should stop, not that the whole
    * daily cap is gone (interactive traffic keeps its own reserve). */
   headroomPct: number;
-}
-
-/**
- * Today's Gemini free-tier request usage vs the daily cap, expressed as
- * background-slice headroom — a thin view over src/services/quota.ts's
- * `getQuota` for callers (mainly the admin panel) that just want a single
- * percentage rather than the full interactive/background split. Sweepers
- * should call `canSpend("background")` directly rather than this — see
- * CLAUDE.md ZERO-COST CONSTRAINT.
- */
-export async function getFreeTierHeadroom(): Promise<FreeTierHeadroom> {
-  const quota = await getQuota();
-  const headroomPct = Math.max(
-    0,
-    Math.round((quota.backgroundRemaining / BACKGROUND_BUDGET) * 100),
-  );
-  return {
-    requestsToday: quota.usedToday,
-    dailyLimit: quota.limit,
-    headroomPct,
-  };
 }
 
 // A reader active within this window gets the free tier to themselves — the
@@ -78,7 +57,7 @@ export async function isReaderActive(): Promise<boolean> {
 // getQueueStatus
 // ---------------------------------------------------------------------------
 
-export interface QueueProcessingItem {
+interface QueueProcessingItem {
   jobId: string;
   bookId: string;
   title: string;
@@ -87,7 +66,7 @@ export interface QueueProcessingItem {
   startedAt: string;
 }
 
-export interface QueueFailureItem {
+interface QueueFailureItem {
   jobId: string;
   bookId: string;
   title: string;
@@ -100,7 +79,7 @@ export interface QueueFailureItem {
   cooldownEndsAt: string | null;
 }
 
-export interface QuotaSplitDto {
+interface QuotaSplitDto {
   limit: number;
   interactiveUsed: number;
   backgroundUsed: number;

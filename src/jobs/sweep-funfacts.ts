@@ -74,7 +74,7 @@ async function loadFunFactsCandidates(): Promise<FunFactsCandidate[]> {
  * exclusive in time to keep total concurrent Gemini calls at or under 3
  * system-wide (see CLAUDE.md ZERO-COST CONSTRAINT).
  */
-export async function sweepFunFactsOnce(): Promise<SweepFunFactsResult> {
+async function sweepFunFactsOnce(): Promise<SweepFunFactsResult> {
   await dbReady;
 
   if (await isReaderActive()) {

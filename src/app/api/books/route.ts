@@ -2,14 +2,13 @@ import { gunzipSync } from "node:zlib";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { dbReady } from "@/db";
-import { MAX_CHUNKS } from "@/domain/book-format";
+import { detectBookFormat, MAX_CHUNKS } from "@/domain/book-format";
 import { requireUser } from "@/lib/auth";
 import { ApiError, handleApiError } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
 import {
   createBookFromExtracted,
   createBookFromUpload,
-  detectBookFormat,
   listBooks,
   toBookDto,
 } from "@/services/books";

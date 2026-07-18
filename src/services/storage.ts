@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
 import { eq, sql } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { storedFiles } from "@/db/schema";
@@ -22,7 +22,13 @@ class LocalStorageDriver implements StorageDriver {
   private root = join(process.cwd(), ".data", "files");
 
   private resolve(key: string): string {
-    return join(this.root, key);
+    // Containment check: keys are minted internally today, but a `../` in a
+    // future caller must never escape .data/files.
+    const filePath = join(this.root, key);
+    if (filePath !== this.root && !filePath.startsWith(this.root + sep)) {
+      throw new Error(`storage key escapes root: ${key}`);
+    }
+    return filePath;
   }
 
   async put(
@@ -208,7 +214,5 @@ function createStorageDriver(): StorageDriver {
   if (env.STORAGE_DRIVER === "db") return new DbStorageDriver();
   return new LocalStorageDriver();
 }
-
-export { DbStorageDriver };
 
 export const storage: StorageDriver = createStorageDriver();

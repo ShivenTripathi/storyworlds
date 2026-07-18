@@ -2,17 +2,17 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { buildShareUrls } from "@/components/share/ShareButton";
+import { HIGHLIGHT_COLORS as HIGHLIGHT_COLOR_IDS } from "@/domain/highlights";
 import { createHighlight as createHighlightRequest } from "./api";
 import type { HighlightDto } from "./types";
 
-/** The reader's four highlighter colors — see the `--highlight-*` tokens in
+/** The reader's highlighter palette, derived from the canonical color list
+ * in src/domain/highlights.ts — see the `--highlight-*` tokens in
  * globals.css (semantic aliases onto the existing EX LIBRIS palette). */
-export const HIGHLIGHT_COLORS = [
-  { id: "yellow", label: "Yellow" },
-  { id: "green", label: "Green" },
-  { id: "blue", label: "Blue" },
-  { id: "pink", label: "Pink" },
-] as const;
+export const HIGHLIGHT_COLORS = HIGHLIGHT_COLOR_IDS.map((id) => ({
+  id,
+  label: id.charAt(0).toUpperCase() + id.slice(1),
+}));
 
 interface SelectionPopoverProps {
   /** Only selections whose range lives inside this element open the popover

@@ -11,6 +11,13 @@
 - **Discover** — published books share their analyzed worlds; adding one costs nothing.
 - **Admin press room** — pipeline monitor, per-book LLM spend from the usage ledger, publish/unpublish, archetype override.
 
+## Public API (experimental)
+
+A minimal read-only API authenticated by `sw_live_…` keys instead of a browser session (only a key's sha256 hash is stored; the secret is shown once at mint time). Mint and revoke keys with a signed-in session via `POST /api/me/keys` and `DELETE /api/me/keys/:keyId`; then:
+
+- `GET /api/v1/books` — your books (Bearer auth, 60 req/min per key)
+- `GET /api/v1/books/:bookId/world` — a book's analyzed world reference, spoiler-gated to your reading frontier just like the app (`?full=1` opts out, owner only)
+
 ## Stack
 
 Next.js (App Router) · TypeScript · Tailwind v4 · Drizzle ORM (PGlite in dev, Neon Postgres in prod) · Clerk · Inngest · direct Anthropic/Gemini SDKs with a mock driver for keyless dev.

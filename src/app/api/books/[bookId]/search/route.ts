@@ -27,7 +27,7 @@ export async function GET(req: Request, { params }: Params) {
     await dbReady;
     const { bookId } = await params;
     const { userId, role } = await requireUser();
-    rateLimit(`user::book-search`, { windowSeconds: 60, max: 30 });
+    rateLimit(`user:${userId}:book-search`, { windowSeconds: 60, max: 30 });
     const book = await requireBookAccess(bookId, userId);
 
     const url = new URL(req.url);

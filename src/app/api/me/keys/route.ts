@@ -4,6 +4,7 @@ import { dbReady } from "@/db";
 import { createApiKey, listApiKeys } from "@/lib/api-keys";
 import { requireUser } from "@/lib/auth";
 import { ApiError, handleApiError } from "@/lib/errors";
+import { rateLimit } from "@/lib/rate-limit";
 
 const createSchema = z.object({
   name: z.string().trim().min(1).max(100).optional(),
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
   try {
     await dbReady;
     const { userId } = await requireUser();
+    rateLimit(`user:${userId}:keys`, { windowSeconds: 600, max: 10 });
 
     const json = await req.json().catch(() => ({}));
     const parsed = createSchema.safeParse(json);

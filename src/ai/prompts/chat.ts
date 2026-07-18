@@ -37,11 +37,6 @@ export interface PersonaTimelineItem {
   approxPage?: number;
 }
 
-export interface PersonaKnowledge {
-  attributes: PersonaAttributes;
-  visibleTimeline: PersonaTimelineItem[];
-}
-
 const SETTING_DESCRIPTION_CAP = 800;
 const CURRENT_PAGE_CAP = 1000;
 

@@ -7,10 +7,10 @@ import { createBookFromText } from "@/services/books";
 import { fetchGutenbergText } from "@/services/gutenberg";
 
 /** Fixed sentinel owner for auto-ingested catalog books. */
-export const CATALOG_USER_ID = "system:catalog";
+const CATALOG_USER_ID = "system:catalog";
 
 /** Upserts the sentinel catalog user row. Idempotent. Returns its id. */
-export async function ensureCatalogUser(): Promise<string> {
+async function ensureCatalogUser(): Promise<string> {
   await dbReady;
   await db
     .insert(users)

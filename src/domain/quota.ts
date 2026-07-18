@@ -84,10 +84,7 @@ export function computeQuotaState(opts: {
 /** True while `now` is still inside a recorded daily-exhaustion window — the
  * "don't try anything unnecessarily" gate: every canSpend() check fails
  * closed during this window, regardless of kind or remaining split budget. */
-export function isGloballyExhausted(
-  exhaustedUntil: Date | null,
-  now: Date,
-): boolean {
+function isGloballyExhausted(exhaustedUntil: Date | null, now: Date): boolean {
   return exhaustedUntil !== null && now.getTime() < exhaustedUntil.getTime();
 }
 

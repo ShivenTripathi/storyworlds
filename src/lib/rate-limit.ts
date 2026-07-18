@@ -74,8 +74,3 @@ export function rateLimit(
 
   existing.count += 1;
 }
-
-/** Test-only: clears all rate limit state. */
-export function __resetRateLimitsForTests(): void {
-  buckets.clear();
-}

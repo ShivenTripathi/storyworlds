@@ -1,11 +1,6 @@
 import { ingestNextCatalogBook } from "@/services/catalog";
 import { inngest } from "./client";
 
-export interface CatalogIngestRequestedEvent {
-  name: "catalog/ingest.requested";
-  data: Record<string, never>;
-}
-
 /**
  * Self-draining catalog ingestion: every 10 minutes, pull the next
  * not-yet-ingested title from CATALOG_SEED and kick off its analysis job.

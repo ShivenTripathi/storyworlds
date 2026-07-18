@@ -74,7 +74,7 @@ async function loadCoverCandidates(): Promise<CoverCandidate[]> {
  * exclusive in time to keep total concurrent Gemini calls at or under 3
  * system-wide (see CLAUDE.md ZERO-COST CONSTRAINT).
  */
-export async function sweepCoversOnce(): Promise<SweepCoversResult> {
+async function sweepCoversOnce(): Promise<SweepCoversResult> {
   await dbReady;
 
   if (!(await canSpend("background"))) {

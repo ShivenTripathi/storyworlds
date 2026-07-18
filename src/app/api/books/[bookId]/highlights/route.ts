@@ -1,14 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { dbReady } from "@/db";
+import { isHighlightColor } from "@/domain/highlights";
 import { requireBookAccess, requireUser } from "@/lib/auth";
 import { ApiError, handleApiError } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
-import {
-  createHighlight,
-  isHighlightColor,
-  listHighlights,
-} from "@/services/annotations";
+import { createHighlight, listHighlights } from "@/services/annotations";
 
 type Params = { params: Promise<{ bookId: string }> };
 
@@ -40,7 +37,7 @@ export async function POST(req: Request, { params }: Params) {
     await dbReady;
     const { bookId } = await params;
     const { userId } = await requireUser();
-    rateLimit(`user::annotate`, { windowSeconds: 60, max: 60 });
+    rateLimit(`user:${userId}:annotate`, { windowSeconds: 60, max: 60 });
     const book = await requireBookAccess(bookId, userId);
 
     const json = await req.json().catch(() => null);

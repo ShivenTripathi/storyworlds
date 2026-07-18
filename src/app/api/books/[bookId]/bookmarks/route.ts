@@ -38,7 +38,7 @@ export async function POST(req: Request, { params }: Params) {
     await dbReady;
     const { bookId } = await params;
     const { userId } = await requireUser();
-    rateLimit(`user::annotate`, { windowSeconds: 60, max: 60 });
+    rateLimit(`user:${userId}:annotate`, { windowSeconds: 60, max: 60 });
     const book = await requireBookAccess(bookId, userId);
 
     const json = await req.json().catch(() => null);

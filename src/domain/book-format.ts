@@ -14,9 +14,7 @@ const EXTENSION_FORMAT: Record<string, BookSourceFormat> = {
   ".txt": "txt",
 };
 
-export const ACCEPTED_UPLOAD_EXTENSIONS = Object.keys(EXTENSION_FORMAT);
-
-export function extensionOf(filename: string): string {
+function extensionOf(filename: string): string {
   const idx = filename.lastIndexOf(".");
   return idx === -1 ? "" : filename.slice(idx).toLowerCase();
 }

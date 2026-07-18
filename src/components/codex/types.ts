@@ -16,7 +16,7 @@ export type { Rarity };
  * id, name, or rarity. Never render anything more than that for a locked
  * card; that's the spoiler-safety contract the server enforces.
  */
-export interface CodexCardLocked {
+interface CodexCardLocked {
   state: "locked";
   kind: string;
   slot: number;
@@ -40,7 +40,7 @@ export interface CodexCardRevealed {
 
 export type CodexCardData = CodexCardLocked | CodexCardRevealed;
 
-export interface CodexCounts {
+interface CodexCounts {
   [kind: string]: { met: number; total: number };
 }
 

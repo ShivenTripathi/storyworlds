@@ -24,7 +24,7 @@ import {
  * anomalies, health) are computed in JS from the loaded rows.
  */
 
-export interface DebugBookMeta {
+interface DebugBookMeta {
   id: string;
   title: string;
   author: string | null;
@@ -37,7 +37,7 @@ export interface DebugBookMeta {
   createdAt: string;
 }
 
-export interface DebugWorldReference {
+interface DebugWorldReference {
   status: string | null;
   settingDescription: string | null;
   visualStyle: Record<string, unknown> | null;
@@ -65,7 +65,7 @@ export interface DebugEntity {
   flags: { noAliases: boolean; noIntroduction: boolean };
 }
 
-export interface DebugResolvedEntity {
+interface DebugResolvedEntity {
   id: string;
   /** null when the id is present in an overlay but absent from the cast. */
   name: string | null;
@@ -73,7 +73,7 @@ export interface DebugResolvedEntity {
   ghost: boolean;
 }
 
-export interface DebugUnresolvedMention {
+interface DebugUnresolvedMention {
   name: string;
   reason: string;
 }
@@ -102,7 +102,7 @@ export interface DebugOverlay {
   };
 }
 
-export interface DebugUsageGroup {
+interface DebugUsageGroup {
   operation: string | null;
   provider: string | null;
   model: string | null;
@@ -112,7 +112,7 @@ export interface DebugUsageGroup {
   costUsd: number;
 }
 
-export interface DebugJob {
+interface DebugJob {
   id: string;
   kind: string;
   status: string | null;
@@ -123,7 +123,7 @@ export interface DebugJob {
   updatedAt: string;
 }
 
-export type DebugAnomalyLevel = "warn" | "info";
+type DebugAnomalyLevel = "warn" | "info";
 
 export interface DebugAnomaly {
   level: DebugAnomalyLevel;
@@ -131,7 +131,7 @@ export interface DebugAnomaly {
   detail: string;
 }
 
-export interface DebugHealth {
+interface DebugHealth {
   totalChunks: number | null;
   overlayCount: number;
   overlayCoverage: number | null; // 0..1 of totalChunks with an overlay row

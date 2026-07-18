@@ -17,7 +17,7 @@ export interface TextRun {
   italic?: boolean;
 }
 
-export interface TocEntry {
+interface TocEntry {
   marker: string;
   title: string;
 }

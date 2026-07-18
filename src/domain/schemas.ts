@@ -21,7 +21,7 @@ export function pageToChunkIdx(page: number): number {
 // SegmentAnalysisSchema — per-segment extraction pass
 // ---------------------------------------------------------------------------
 
-export const SegmentEntitySchema = z.object({
+const SegmentEntitySchema = z.object({
   name: z.string().min(1),
   kind: z.enum(ENTITY_KINDS),
   aliases: z.array(z.string()).default([]),
@@ -30,7 +30,7 @@ export const SegmentEntitySchema = z.object({
   firstSeenPage: z.number().int().optional(),
 });
 
-export const SegmentEventSchema = z.object({
+const SegmentEventSchema = z.object({
   summary: z.string(),
   page: z.number().int().optional(),
 });
@@ -42,14 +42,12 @@ export const SegmentAnalysisSchema = z.object({
 });
 
 export type SegmentAnalysis = z.infer<typeof SegmentAnalysisSchema>;
-export type SegmentEntity = z.infer<typeof SegmentEntitySchema>;
-export type SegmentEvent = z.infer<typeof SegmentEventSchema>;
 
 // ---------------------------------------------------------------------------
 // WorldSynthesisSchema — whole-book synthesis pass
 // ---------------------------------------------------------------------------
 
-export const VisualStyleSchema = z.object({
+const VisualStyleSchema = z.object({
   artStyle: z.string(),
   colorPalette: z.string(),
   mood: z.string(),
@@ -57,7 +55,7 @@ export const VisualStyleSchema = z.object({
   themeArchetype: z.enum(ARCHETYPES),
 });
 
-export const WorldEntityAttributesSchema = z.object({
+const WorldEntityAttributesSchema = z.object({
   // A fuller, 2-3 sentence introduction of who this entity is AS INTRODUCED
   // in the story so far — never their arc's resolution. Unlike
   // internalState/keyMotivation/scars below, this is not frontier-gated (it
@@ -70,7 +68,7 @@ export const WorldEntityAttributesSchema = z.object({
   scars: z.string().optional(),
 });
 
-export const WorldEntitySchema = z.object({
+const WorldEntitySchema = z.object({
   name: z.string().min(1),
   kind: z.enum(ENTITY_KINDS),
   aliases: z.array(z.string()).default([]),
@@ -79,18 +77,18 @@ export const WorldEntitySchema = z.object({
   introducedAtPage: z.number().int().optional(),
 });
 
-export const TimelineEntrySchema = z.object({
+const TimelineEntrySchema = z.object({
   label: z.string(),
   summary: z.string(),
   approxPage: z.number().int().optional(),
 });
 
-export const CommitmentSchema = z.object({
+const CommitmentSchema = z.object({
   claim: z.string(),
   status: z.enum(["open", "fulfilled", "broken"]).default("open"),
 });
 
-export const UnknownSchema = z.object({
+const UnknownSchema = z.object({
   question: z.string(),
   kind: z.string().optional(),
 });
@@ -109,10 +107,6 @@ export const WorldSynthesisSchema = z.object({
 });
 
 export type WorldSynthesis = z.infer<typeof WorldSynthesisSchema>;
-export type WorldEntity = z.infer<typeof WorldEntitySchema>;
-export type TimelineEntry = z.infer<typeof TimelineEntrySchema>;
-export type Commitment = z.infer<typeof CommitmentSchema>;
-export type Unknown = z.infer<typeof UnknownSchema>;
 
 // ---------------------------------------------------------------------------
 // OverlaySchema — per-page overlay (illustration prompt + reading companion
@@ -121,7 +115,7 @@ export type Unknown = z.infer<typeof UnknownSchema>;
 
 const MAX_SUGGESTED_QUESTIONS = 3;
 
-export const OverlayActiveEntitySchema = z.object({
+const OverlayActiveEntitySchema = z.object({
   name: z.string().min(1),
 });
 
@@ -147,9 +141,6 @@ export const OverlaySchema = z.object({
     .transform((qs) => qs.slice(0, MAX_SUGGESTED_QUESTIONS)),
 });
 
-export type Overlay = z.infer<typeof OverlaySchema>;
-export type OverlayActiveEntity = z.infer<typeof OverlayActiveEntitySchema>;
-
 // ---------------------------------------------------------------------------
 // FunFactsSchema — spoiler-free "Did you know?" facts generated from ONLY a
 // book's title/author (+ optional era hint), shown BEFORE reading to make
@@ -161,14 +152,9 @@ export type OverlayActiveEntity = z.infer<typeof OverlayActiveEntitySchema>;
 // confident about, and an empty list is a valid, honest result.
 // ---------------------------------------------------------------------------
 
-export const FUN_FACT_CATEGORIES = [
-  "author",
-  "history",
-  "trivia",
-  "legacy",
-] as const;
+const FUN_FACT_CATEGORIES = ["author", "history", "trivia", "legacy"] as const;
 
-export const FunFactSchema = z.object({
+const FunFactSchema = z.object({
   text: z.string().min(1),
   category: z.enum(FUN_FACT_CATEGORIES),
 });
@@ -182,6 +168,4 @@ export const FunFactsSchema = z.object({
     .transform((facts) => facts.slice(0, MAX_FUN_FACTS)),
 });
 
-export type FunFactCategory = (typeof FUN_FACT_CATEGORIES)[number];
-export type FunFact = z.infer<typeof FunFactSchema>;
 export type FunFacts = z.infer<typeof FunFactsSchema>;

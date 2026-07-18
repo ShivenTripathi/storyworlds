@@ -92,5 +92,3 @@ export const db = new Proxy({} as AnyDb, {
     return Reflect.get(instance as object, prop, receiver);
   },
 }) as AnyDb;
-
-export { schema };

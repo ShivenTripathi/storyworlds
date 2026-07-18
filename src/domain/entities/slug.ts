@@ -15,7 +15,7 @@ export const ENTITY_KINDS = [
 
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 
-export const ENTITY_KIND_PREFIX: Record<EntityKind, string> = {
+const ENTITY_KIND_PREFIX: Record<EntityKind, string> = {
   character: "char",
   location: "loc",
   object: "obj",

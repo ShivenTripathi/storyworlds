@@ -1,18 +1,12 @@
 import { and, asc, eq, ilike, lte } from "drizzle-orm";
 import { db, dbReady } from "@/db";
 import { bookmarks, chunks, highlights } from "@/db/schema";
+import { escapeLikePattern } from "@/domain/like";
 import { ApiError } from "@/lib/errors";
 
 // ---------------------------------------------------------------------------
 // Highlights (+ notes — a highlight-with-note IS how notes work here)
 // ---------------------------------------------------------------------------
-
-export const HIGHLIGHT_COLORS = ["yellow", "green", "blue", "pink"] as const;
-export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number];
-
-export function isHighlightColor(value: string): value is HighlightColor {
-  return (HIGHLIGHT_COLORS as readonly string[]).includes(value);
-}
 
 export interface HighlightDto {
   id: string;
@@ -253,12 +247,6 @@ export interface SearchBookOptions {
 const SEARCH_CONTEXT_CHARS = 60;
 const SEARCH_DEFAULT_LIMIT = 30;
 const SEARCH_MAX_LIMIT = 100;
-
-/** Escapes Postgres ILIKE wildcards so a literal `%`/`_`/`\` in the query is
- * matched literally rather than as a pattern metacharacter. */
-function escapeLikePattern(raw: string): string {
-  return raw.replace(/[\\%_]/g, (m) => `\\${m}`);
-}
 
 /**
  * Case-insensitive full-text search over a book's chunks, gated to the

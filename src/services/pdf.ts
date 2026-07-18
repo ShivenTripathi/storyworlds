@@ -5,7 +5,7 @@ import { extractText, getDocumentProxy } from "unpdf";
 // pathological file can't exhaust DB writes / the analysis pipeline.
 const MAX_PAGES = 5000;
 
-export class PdfTooLargeError extends Error {
+class PdfTooLargeError extends Error {
   constructor(public readonly totalPages: number) {
     super(`PDF has ${totalPages} pages; the limit is ${MAX_PAGES}.`);
     this.name = "PdfTooLargeError";

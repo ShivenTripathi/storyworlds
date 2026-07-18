@@ -8,10 +8,10 @@ import {
 } from "@/domain/rate-limit";
 import { env } from "@/lib/env";
 import { markExhausted } from "@/services/quota";
+import { assertBudget } from "./budget";
 import { MockDriver } from "./mock";
 
-export type LlmOperation =
-  "segment" | "synthesis" | "chat" | "overlay" | "funfacts";
+type LlmOperation = "segment" | "synthesis" | "chat" | "overlay" | "funfacts";
 
 export interface CompleteJsonOptions<S extends z.ZodTypeAny> {
   operation: LlmOperation;
@@ -207,7 +207,7 @@ const GEMINI_SCHEMA_KEYS = [
   "description",
 ] as const;
 
-export function sanitizeSchemaForGemini(
+function sanitizeSchemaForGemini(
   schema: Record<string, unknown>,
 ): Record<string, unknown> {
   const defs = (schema.$defs ?? schema.definitions ?? {}) as Record<
@@ -645,6 +645,9 @@ async function recordUsage(opts: {
 export async function completeJson<S extends z.ZodTypeAny>(
   opts: CompleteJsonOptions<S>,
 ): Promise<z.infer<S>> {
+  // Enforce the per-book cap here so it holds for every caller — including
+  // the analysis pipeline/sweeps, which don't call assertBudget themselves.
+  if (opts.bookId) await assertBudget(opts.bookId);
   // zod v4 ships native JSON Schema conversion; zod-to-json-schema (built
   // for zod v3's internal `_def` shape) silently produces an empty schema
   // against zod v4 input, so we use z.toJSONSchema directly here instead.
@@ -750,6 +753,7 @@ const DEFAULT_CHAT_MAX_TOKENS = 1024;
 export async function streamText(
   opts: StreamTextOptions,
 ): Promise<StreamTextResult> {
+  if (opts.bookId) await assertBudget(opts.bookId);
   const { provider, model } = parseModelSlot(modelForOperation(opts.operation));
   const driver = getDriver(provider);
   const maxTokens = opts.maxTokens ?? DEFAULT_CHAT_MAX_TOKENS;

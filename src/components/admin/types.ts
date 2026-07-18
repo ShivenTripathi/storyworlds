@@ -39,10 +39,10 @@ export interface AdminOverview {
  * without importing it (see the file-level comment above).
  */
 export type FeedbackKind = "praise" | "idea" | "bug" | "general";
-export type FeedbackSentiment = "up" | "down";
+type FeedbackSentiment = "up" | "down";
 export type FeedbackStatus = "new" | "triaged" | "resolved";
 
-export interface FeedbackContext {
+interface FeedbackContext {
   bookId?: string;
   viewport?: { width: number; height: number };
   userAgent?: string;
@@ -78,7 +78,7 @@ export interface FeedbackListResponse {
  * Wire shapes for /api/admin/queue, mirroring src/services/queue.ts's
  * QueueStatusDto without importing it (see the file-level comment above).
  */
-export interface QueueProcessingItem {
+interface QueueProcessingItem {
   jobId: string;
   bookId: string;
   title: string;
@@ -87,7 +87,7 @@ export interface QueueProcessingItem {
   startedAt: string;
 }
 
-export interface QueueFailureItem {
+interface QueueFailureItem {
   jobId: string;
   bookId: string;
   title: string;

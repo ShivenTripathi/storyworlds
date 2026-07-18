@@ -2,61 +2,17 @@ import { Inngest } from "inngest";
 
 /**
  * Shared Inngest client for the Story Worlds analysis pipeline. Functions
- * are registered in `src/jobs/analyze-book.ts` and served from
+ * are registered in `src/jobs/*.ts` and served from
  * `src/app/api/inngest/route.ts`.
+ *
+ * Event contract (payloads live at the send/trigger sites):
+ *  - `book/analyze.requested`   { bookId, jobId } — full-book analysis
+ *  - `overlay/prefetch.requested` { bookId, fromIdx, count } — page overlays
+ *  - `catalog/ingest.requested` (no data) — pull next Gutenberg seed book
+ *  - `analysis/sweep.requested`, `overlay/sweep.requested`,
+ *    `cover/sweep.requested`, `funfacts/sweep.requested` (no data) — manual
+ *    triggers for the always-on sweepers (src/jobs/sweep-*.ts); a cron tick
+ *    is what normally drives those, these let an admin action (or a test)
+ *    force an immediate tick.
  */
 export const inngest = new Inngest({ id: "storyworlds" });
-
-export interface BookAnalyzeRequestedEvent {
-  name: "book/analyze.requested";
-  data: {
-    bookId: string;
-    jobId: string;
-  };
-}
-
-export interface OverlayPrefetchRequestedEvent {
-  name: "overlay/prefetch.requested";
-  data: {
-    bookId: string;
-    fromIdx: number;
-    count: number;
-  };
-}
-
-/**
- * Manual trigger for the always-on analysis sweeper (src/jobs/sweep-
- * analysis.ts) — the cron tick is what normally drives it; this lets an
- * admin action (or a test) force an immediate tick.
- */
-export interface AnalysisSweepRequestedEvent {
-  name: "analysis/sweep.requested";
-  data: Record<string, never>;
-}
-
-/**
- * Manual trigger for the always-on illustration sweeper (src/jobs/sweep-
- * overlays.ts) — see AnalysisSweepRequestedEvent above.
- */
-export interface OverlaySweepRequestedEvent {
-  name: "overlay/sweep.requested";
-  data: Record<string, never>;
-}
-
-/**
- * Manual trigger for the always-on cover-illustration backfill sweeper
- * (src/jobs/sweep-covers.ts) — see AnalysisSweepRequestedEvent above.
- */
-export interface CoverSweepRequestedEvent {
-  name: "cover/sweep.requested";
-  data: Record<string, never>;
-}
-
-/**
- * Manual trigger for the always-on "fun facts" backfill sweeper
- * (src/jobs/sweep-funfacts.ts) — see AnalysisSweepRequestedEvent above.
- */
-export interface FunFactsSweepRequestedEvent {
-  name: "funfacts/sweep.requested";
-  data: Record<string, never>;
-}

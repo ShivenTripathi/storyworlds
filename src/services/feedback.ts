@@ -3,7 +3,7 @@ import { db, dbReady } from "@/db";
 import { feedback, users } from "@/db/schema";
 
 export type FeedbackKind = "praise" | "idea" | "bug" | "general";
-export type FeedbackSentiment = "up" | "down";
+type FeedbackSentiment = "up" | "down";
 export type FeedbackStatus = "new" | "triaged" | "resolved";
 
 /**
@@ -11,7 +11,7 @@ export type FeedbackStatus = "new" | "triaged" | "resolved";
  * just observed by the widget on open. `bookId` is populated when the
  * pathname matches a /books/[id]* route.
  */
-export interface FeedbackContext {
+interface FeedbackContext {
   bookId?: string;
   viewport?: { width: number; height: number };
   userAgent?: string;
@@ -51,7 +51,7 @@ export interface ListFeedbackParams {
   limit?: number;
 }
 
-export interface FeedbackCounts {
+interface FeedbackCounts {
   byKind: Record<FeedbackKind, number>;
   bySentiment: { up: number; down: number; none: number };
 }
